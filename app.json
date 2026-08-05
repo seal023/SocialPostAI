@@ -7,7 +7,12 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.seal.socialpostai",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "This app requires microphone access for voice input to generate social media copy."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -15,10 +20,30 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "com.android.vending.BILLING",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.seal.socialpostai"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "28450087-a521-49ab-982c-b2fd96e55f53"
+      }
+    },
+    "plugins": [
+      "expo-font",
+      "expo-asset",
+      "expo-audio",
+      "expo-image-picker",
+      "expo-apple-authentication",
+      "expo-status-bar",
+      "react-native-iap"
+    ],
+    "owner": "seal023"
   }
 }

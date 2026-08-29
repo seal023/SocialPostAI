@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "SocialPostAI_V2",
+    "slug": "SocialPostAI_V2",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.seal023.SocialPostAI.4C362B27Q4",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "This app requires microphone access for voice input to generate social media copy."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": [
+        "com.android.vending.BILLING",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.seal.socialpostai"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-asset",
+      "expo-audio",
+      "expo-image-picker",
+      "expo-apple-authentication",
+      "react-native-iap"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "90ecb69f-71af-4211-a402-b57a48e33485"
+      }
+    }
+  }
+}

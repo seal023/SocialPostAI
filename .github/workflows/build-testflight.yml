@@ -1,0 +1,201 @@
+name: Build & Submit to TestFlight
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+
+jobs:
+  # ============================================================
+  # Job 1: Build
+  # 触发条件：push（自动）+ workflow_dispatch（手动）
+  # 职责：仅执行 eas build，输出 build_id 供 Submit Job 使用
+  # ============================================================
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      build_id: ${{ steps.eas-build.outputs.build_id }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: EAS Build iOS (Production)
+        id: eas-build
+        run: |
+          echo "开始执行 eas build..."
+          eas build \
+            --platform ios \
+            --profile production \
+            --non-interactive \
+            --no-wait \
+            --json \
+            | tee build-result.json
+
+          BUILD_ID=$(jq -r '.id // empty' build-result.json)
+          echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
+
+          if [ -z "$BUILD_ID" ]; then
+            echo "错误：未能获取 Build ID，构建可能未成功启动。"
+            echo "查看上方 eas build 输出获取详细错误信息。"
+            exit 1
+          fi
+
+          echo "构建已提交，Build ID: $BUILD_ID"
+
+      - name: Wait for build completion
+        run: |
+          BUILD_ID="${{ steps.eas-build.outputs.build_id }}"
+          echo "等待 Build ID: $BUILD_ID 完成..."
+
+          STATUS=""
+          RETRIES=0
+          MAX_RETRIES=120
+
+          while [ "$STATUS" != "FINISHED" ] && [ "$STATUS" != "ERRORED" ] && [ $RETRIES -lt $MAX_RETRIES ]; do
+            RESULT=$(eas build:view "$BUILD_ID" --json 2>/dev/null || echo '{"status":"UNKNOWN"}')
+            STATUS=$(echo "$RESULT" | jq -r '.status // "UNKNOWN"')
+            echo "[$((RETRIES+1))/$MAX_RETRIES] 当前状态: $STATUS"
+            sleep 30
+            RETRIES=$((RETRIES+1))
+          done
+
+          if [ "$STATUS" = "FINISHED" ]; then
+            echo "构建成功完成！Build ID: $BUILD_ID"
+          elif [ "$STATUS" = "ERRORED" ]; then
+            echo "构建失败！请查看 EAS Dashboard 获取详细错误日志。"
+            exit 1
+          else
+            echo "构建超时，请手动检查 EAS Dashboard。"
+            exit 1
+          fi
+
+  # ============================================================
+  # Job 2: Submit
+  # 触发条件：仅 workflow_dispatch（手动触发）
+  # 职责：仅执行 eas submit，引用 Build Job 的 build_id
+  # Secrets 仅注入此 Job
+  # ============================================================
+  submit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Validate required secrets
+        run: |
+          MISSING=""
+
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            MISSING="${MISSING}\n  - EXPO_TOKEN: 未设置。请在 GitHub Secrets 中添加 Expo 访问令牌"
+            MISSING="${MISSING}\n    获取地址: https://expo.dev/settings/access-tokens"
+          fi
+
+          if [ -z "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" ]; then
+            MISSING="${MISSING}\n  - APPLE_APP_SPECIFIC_PASSWORD: 未设置。请按以下步骤获取:"
+            MISSING="${MISSING}\n    1. 访问 https://appleid.apple.com 登录你的 Apple ID"
+            MISSING="${MISSING}\n    2. 进入 Sign-In and Security > App-Specific Passwords"
+            MISSING="${MISSING}\n    3. 点击 + 生成新密码，名称如 \"GitHub Actions EAS\""
+            MISSING="${MISSING}\n    4. 将生成的密码填入 GitHub Secrets"
+            MISSING="${MISSING}\n  - 注意: Apple ID 开启双重认证（2FA）后，App-Specific Password 是必需的。"
+          fi
+
+          if [ -n "$MISSING" ]; then
+            printf "\n============================================\n"
+            printf " 提交被阻止：缺少必需的凭据\n"
+            printf "============================================\n"
+            printf "$MISSING\n"
+            printf "\n请完成上述配置后重新触发 workflow_dispatch。\n"
+            printf "============================================\n"
+            exit 1
+          fi
+
+          echo "所有必需的凭据已就绪。"
+
+      - name: Submit to App Store Connect
+        run: |
+          BUILD_ID="${{ needs.build.outputs.build_id }}"
+
+          if [ -z "$BUILD_ID" ]; then
+            echo "错误: 未获取到 build_id，请确认 Build Job 已成功完成。"
+            exit 1
+          fi
+
+          echo "提交 Build ID: $BUILD_ID 到 App Store Connect..."
+
+          set +e
+          SUBMIT_OUTPUT=$(eas submit \
+            --platform ios \
+            --id="$BUILD_ID" \
+            --non-interactive 2>&1)
+          SUBMIT_EXIT_CODE=$?
+          set -e
+
+          echo "$SUBMIT_OUTPUT"
+
+          if [ $SUBMIT_EXIT_CODE -ne 0 ]; then
+            echo ""
+            echo "============================================"
+            echo " 提交流程失败"
+            echo "============================================"
+            echo " 常见原因排查："
+            echo ""
+            echo " 1. Apple 2FA / App-Specific Password 问题："
+            echo "    - 确保 GitHub Secrets 中 APPLE_APP_SPECIFIC_PASSWORD 已正确设置"
+            echo "    - 生成地址: https://appleid.apple.com"
+            echo ""
+            echo " 2. App Store Connect API Key 问题："
+            echo "    - 确认 ASC_API_ISSUER_ID、ASC_API_KEY_ID、ASC_API_KEY 均已设置"
+            echo "    - 生成地址: https://appstoreconnect.apple.com/access/integrations/api"
+            echo ""
+            echo " 3. 证书/描述文件问题："
+            echo "    - 运行 'eas credentials' 检查凭据状态"
+            echo ""
+            echo " 4. 构建未完成："
+            echo "    - 确认 Build Job 中的 eas build 已成功完成"
+            echo "    - 当前 Build ID: $BUILD_ID"
+            echo ""
+            echo " 原始错误输出:"
+            echo "$SUBMIT_OUTPUT"
+            echo "============================================"
+            exit 1
+          fi
+
+          echo "提交完成！Build ID: $BUILD_ID 已提交至 App Store Connect。"

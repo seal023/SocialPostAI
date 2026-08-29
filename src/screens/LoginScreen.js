@@ -62,14 +62,22 @@ export default function LoginScreen({ onLoginSuccess, themeName }) {
             By continuing, you agree to our{' '}
             <Text
               style={{ color: theme.primary }}
+<<<<<<< HEAD
               onPress={() => Linking.openURL(TERMS_URL).catch(() => {})}
+=======
+              onPress={() => Linking.openURL(TERMS_URL)}
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
             >
               Terms of Service
             </Text>
             {' '}and{' '}
             <Text
               style={{ color: theme.primary }}
+<<<<<<< HEAD
               onPress={() => Linking.openURL(PRIVACY_URL).catch(() => {})}
+=======
+              onPress={() => Linking.openURL(PRIVACY_URL)}
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
             >
               Privacy Policy
             </Text>

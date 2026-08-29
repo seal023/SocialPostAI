@@ -8,7 +8,7 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.seal023.SocialPostAI.4C362B27Q4",
+      "bundleIdentifier": "com.seal023.SocialPostAI.20260816",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSMicrophoneUsageDescription": "This app requires microphone access for voice input to generate social media copy."
@@ -25,10 +25,15 @@
         "com.android.vending.BILLING",
         "android.permission.RECORD_AUDIO"
       ],
-      "package": "com.seal.socialpostai"
+      "package": "com.seal023.SocialPostAI.20260816"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "90ecb69f-71af-4211-a402-b57a48e33485"
+      }
     },
     "plugins": [
       "expo-font",
@@ -36,12 +41,9 @@
       "expo-audio",
       "expo-image-picker",
       "expo-apple-authentication",
+      "expo-status-bar",
       "react-native-iap"
     ],
-    "extra": {
-      "eas": {
-        "projectId": "90ecb69f-71af-4211-a402-b57a48e33485"
-      }
-    }
+    "owner": "xing_yufei"
   }
 }

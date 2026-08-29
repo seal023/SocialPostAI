@@ -2,6 +2,7 @@ import { registerRootComponent } from 'expo';
 
 import App from './App';
 
+<<<<<<< HEAD
 // ============================================================
 // JS fatal guard — iOS 26 + A18 Pro + Release 平台 bug 兜底
 // ------------------------------------------------------------
@@ -176,6 +177,8 @@ function installExceptionsManagerPatch() {
 
 installExceptionsManagerPatch();
 
+=======
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);
 // It also ensures that whether you load the app in Expo Go or in a native build,
 // the environment is set up appropriately

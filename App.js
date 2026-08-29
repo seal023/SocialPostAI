@@ -10,19 +10,29 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Alert } from 'react-native';
+<<<<<<< HEAD
 import * as FileSystem from 'expo-file-system/legacy';
+=======
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
 import { COLORS, setStyleTheme, getTheme } from './src/themes/theme';
 import { getPreference, savePreference } from './src/utils/storage';
 import {
   initSubscription,
   getSubscriptionState,
+<<<<<<< HEAD
+=======
+  initIAPIntegration,
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   verifySubscriptionOnLaunch,
   cleanupIAPResources,
 } from './src/utils/subscription';
 import { initCurrentModel } from './src/services/ModelAdapter';
 import { getAppleAuthState } from './src/services/AppleAuthService';
 import { LanguageProvider, useLanguage } from './src/context/LanguageContext';
+<<<<<<< HEAD
 import ErrorBoundary from './src/components/ErrorBoundary';
+=======
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
 
 import GenerateScreen from './src/screens/GenerateScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
@@ -41,13 +51,17 @@ function AppNavigator() {
   const tRef = useRef(t);
   tRef.current = t;
 
+<<<<<<< HEAD
   // Ref to show the JS fatal diagnostic alert only once per session
   const jsFatalAlertShownRef = useRef(false);
 
+=======
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   // Load saved theme and model on mount (runs once — no t dependency to avoid re-runs)
   useEffect(() => {
     const lt = tRef.current; // capture latest t at mount time
     (async () => {
+<<<<<<< HEAD
      try {
       // Initialize subscription system
       await initSubscription();
@@ -56,6 +70,14 @@ function AppNavigator() {
       // StoreKit calls at startup (initConnection / getAvailablePurchases) throw a
       // native exception on iOS 26 → SIGABRT crash. IAP is now lazily initialized
       // when the user opens the Profile screen (see ProfileScreen loadData).
+=======
+      // Initialize subscription system
+      await initSubscription();
+
+      // Initialize IAP integration (registers callbacks + connects to StoreKit / Google Play)
+      // Non-fatal if it fails — app continues to work in trial/free mode
+      await initIAPIntegration();
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
 
       // Verify subscription state on relaunch (checks cached receipt)
       await verifySubscriptionOnLaunch();
@@ -80,6 +102,7 @@ function AppNavigator() {
       await initCurrentModel();
       setIsReady(true);
 
+<<<<<<< HEAD
       // ---- JS fatal diagnostic alert (build 9 platform-bug workaround) ----
       // index.js 的 JSFatalGuard 把被拦截的 JS 错误写入了 AsyncStorage。
       // 这里在启动后读取并弹窗展示最新一条，方便在真机上截图反馈错误详情
@@ -145,6 +168,8 @@ function AppNavigator() {
         // Best-effort
       }
 
+=======
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
       // ---- Tiered trial expiry reminder (TRIAL_DAYS = 7) ----
       //  days = 7,6,5,4 → no alert popup (the profile badge already shows countdown)
       //  days = 3,2,1   → alert popup (remind later + upgrade pro)
@@ -270,6 +295,7 @@ function AppNavigator() {
           );
         }, 1000);
       }
+<<<<<<< HEAD
      } catch (startupError) {
        // Catch-all: any unhandled rejection in the startup chain would otherwise
        // bubble to React 19 onUncaughtError → ExceptionsManager.reportException
@@ -278,6 +304,8 @@ function AppNavigator() {
        // Ensure the app still renders instead of hanging on a blank screen
        setIsReady(true);
      }
+=======
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
     })();
 
     // Cleanup IAP listeners on unmount
@@ -401,9 +429,13 @@ export default function App() {
   return (
     <LanguageProvider>
       <SafeAreaProvider>
+<<<<<<< HEAD
         <ErrorBoundary>
           <AppNavigator />
         </ErrorBoundary>
+=======
+        <AppNavigator />
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
       </SafeAreaProvider>
     </LanguageProvider>
   );

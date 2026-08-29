@@ -1,12 +1,9 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
 # dependencies
 node_modules/
 
 # Expo
 .expo/
 dist/
-dist-verify/
 web-build/
 expo-env.d.ts
 
@@ -31,7 +28,7 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files (keep API keys out of git!)
+# local env files
 .env
 .env*.local
 

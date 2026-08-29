@@ -36,7 +36,10 @@ import ToneSlider from '../components/ToneSlider';
 import RecentHistory from '../components/RecentHistory';
 import ResultDrawer from '../components/ResultDrawer';
 import VoiceInput from '../components/VoiceInput';
+<<<<<<< HEAD
 import ErrorBoundary from '../components/ErrorBoundary';
+=======
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
 import { BackgroundDecorator, CornerBrackets, getCardStyle, getButtonTextShadow, getStatusBarStyle } from '../components/StyleDecorator';
 
 export default function GenerateScreen({ themeName = 'pink', navigation }) {
@@ -140,6 +143,7 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
     }, [])
   );
 
+<<<<<<< HEAD
   // 每一步独立 try-catch：任何一步失败只让对应 state 保持默认值，
   // 绝不冒泡成 unhandled rejection（iOS 26 + A18 Pro + Release 下会被
   // 框架 reportException 放大成原生崩溃）。
@@ -171,6 +175,24 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
     try {
       setTrendingTopics(getTrendingTopics());
     } catch (e) {}
+=======
+  const loadData = async () => {
+    const h = await getHistory();
+    setHistory(h);
+    const remaining = await getRemainingCount();
+    setRemainingCount(remaining);
+    const bvSamples = await getBrandVoiceSamples();
+    setBrandVoiceSamples(bvSamples);
+    // Default: first sample is active (single-select)
+    if (bvSamples.length > 0) {
+      setActiveBrandVoice(0);
+    }
+    const subState = await getSubscriptionState();
+    setSubscriptionState(subState);
+    const perms = await getPermissions();
+    setPermissions(perms);
+    setTrendingTopics(getTrendingTopics());
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   };
 
   // TODO: Re-enable when building Development Build (requires expo-location native module)
@@ -533,6 +555,7 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
               </Text>
               <View style={styles.inputActions}>
                 {permissions?.canUseVoice ? (
+<<<<<<< HEAD
                   <ErrorBoundary
                     fallback={
                       <TouchableOpacity
@@ -549,6 +572,13 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
                       language={localOutputLang}
                     />
                   </ErrorBoundary>
+=======
+                  <VoiceInput
+                    themeName={themeName}
+                    onResult={handleVoiceResult}
+                    language={localOutputLang}
+                  />
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
                 ) : (
                   <TouchableOpacity
                     style={[styles.inputActionBtn, { opacity: 0.4 }]}

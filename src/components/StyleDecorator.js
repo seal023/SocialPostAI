@@ -17,6 +17,7 @@ import { View, StyleSheet } from 'react-native';
 export function BackgroundDecorator({ decorations = {}, background }) {
   const { showGrid, showScanLines, showBubbles } = decorations;
 
+<<<<<<< HEAD
   // ── Cartoon bubbles (memoized) ──
   // NOTE: useMemo must be called unconditionally at the top level of the
   // component to satisfy React Rules of Hooks. The computation is cheap
@@ -37,6 +38,8 @@ export function BackgroundDecorator({ decorations = {}, background }) {
     return items;
   }, [decorations.bubbleColors, decorations.bubbleCount]);
 
+=======
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   // ── Sci-Fi: Grid + Scan lines ──
   if (showGrid || showScanLines) {
     return (
@@ -116,6 +119,25 @@ export function BackgroundDecorator({ decorations = {}, background }) {
 
   // ── Cartoon: Bubbles + wavy decoration ──
   if (showBubbles) {
+<<<<<<< HEAD
+=======
+    const bubbles = useMemo(() => {
+      const items = [];
+      const colors = decorations.bubbleColors || ['#FB923C', '#4ADE80', '#F472B6'];
+      const count = decorations.bubbleCount || 10;
+      // Deterministic pseudo-random positions based on index
+      for (let i = 0; i < count; i++) {
+        const seed = i * 137.5;
+        const x = (seed * 0.618) % 100;
+        const y = (seed * 0.382) % 100;
+        const size = 6 + (i % 4) * 4;
+        const opacity = 0.12 + (i % 3) * 0.06;
+        items.push({ x, y, size, opacity, color: colors[i % colors.length], key: `b${i}` });
+      }
+      return items;
+    }, [decorations.bubbleColors, decorations.bubbleCount]);
+
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
     return (
       <View style={[StyleSheet.absoluteFill, { backgroundColor: background }]} pointerEvents="none">
         {/* Wavy decoration at top */}

@@ -331,10 +331,17 @@ function getFallbackProducts() {
       productId: PRODUCT_IDS.MONTHLY,
       title: 'SocialPost AI Monthly',
       description: 'Unlimited AI copy generation',
+<<<<<<< HEAD
       price: '$5.99',
       localizedPrice: '$5.99',
       currency: 'USD',
       priceValue: 5.99,
+=======
+      price: '$6.99',
+      localizedPrice: '$6.99',
+      currency: 'USD',
+      priceValue: 6.99,
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
       isFallback: true,
     },
     {
@@ -352,7 +359,11 @@ function getFallbackProducts() {
 
 /**
  * Initiate a Pro subscription purchase.
+<<<<<<< HEAD
  * @param {string} productId - 'com.seal023.socialpostai.monthly' or 'com.seal023.socialpostai.annual'
+=======
+ * @param {string} productId - 'com.seal.socialpostai.monthly' or 'com.seal.socialpostai.annual'
+>>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
  * @returns {Promise<{success: boolean, error?: string}>}
  */
 export async function purchasePro(productId) {

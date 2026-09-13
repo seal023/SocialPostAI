@@ -27,7 +27,7 @@ const ASR_KEY_SOURCE = process.env.EXPO_PUBLIC_ASR_API_KEY
   : 'FALLBACK BAILIAN/DASHSCOPE (US key → realtime ASR 401)';
 const PARAFORMER_WS_URL =
   process.env.EXPO_PUBLIC_PARAFORMER_WS_URL ||
-  'wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference/';
+  'wss://ws-6f52kltpls7886bp.ap-southeast-1.maas.aliyuncs.com/api-ws/v1/inference';
 const PARAFORMER_MODEL =
   process.env.EXPO_PUBLIC_PARAFORMER_MODEL || 'fun-asr-realtime';
 

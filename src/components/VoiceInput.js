@@ -9,8 +9,10 @@
 // REGION-SPECIFIC — a key from another region fails the WS handshake with 401.
 // The text-generation key in this project is a US (us-east-1) key and CANNOT
 // be used for realtime ASR; a Singapore or Beijing key is required.
-//   • Singapore : wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference/
-//                 (or wss://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/...)
+//   • This project uses the PRIVATE MaaS workspace (Singapore ap-southeast-1):
+//       wss://ws-6f52kltpls7886bp.ap-southeast-1.maas.aliyuncs.com/api-ws/v1/inference
+//     The ASR key is workspace-scoped — provided via EXPO_PUBLIC_ASR_API_KEY.
+//     (Do NOT switch to the public dashscope-intl endpoint; that key is private-workspace-only.)
 //   • Beijing   : wss://dashscope.aliyuncs.com/api-ws/v1/inference/
 //                 (or wss://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/...)
 // Auth header: Authorization: Bearer <region_key>  (NOT X-DashScope-ApiKey)
@@ -50,7 +52,7 @@ const ASR_API_KEY =
   '';
 const PARAFORMER_WS_URL =
   process.env.EXPO_PUBLIC_PARAFORMER_WS_URL ||
-  'wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference/';
+  'wss://ws-6f52kltpls7886bp.ap-southeast-1.maas.aliyuncs.com/api-ws/v1/inference';
 const PARAFORMER_MODEL =
   process.env.EXPO_PUBLIC_PARAFORMER_MODEL || 'fun-asr-realtime';
 

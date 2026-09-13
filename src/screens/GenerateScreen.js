@@ -27,8 +27,9 @@ import { COLORS, SPACING, FONT_SIZE, RADIUS, SHADOWS, getTheme } from '../themes
 import { PLATFORMS, STYLES, VOICE_TYPES, generateFullResult } from '../utils/mockData';
 import { generateCopy, parseMultiPlatformResponse } from '../services/ModelAdapter';
 import { saveHistory, getHistory, toggleFavorite, updateHistory, getBrandVoiceSamples } from '../utils/storage';
-import { getSubscriptionState, incrementDailyUsage, getRemainingCount, getTrendingTopics } from '../utils/subscription';
+import { getSubscriptionState, incrementDailyUsage, getRemainingCount, getTrendingTopics, resetDailyUsage } from '../utils/subscription';
 import { getPermissions } from '../utils/permissions';
+import { TEST_TOOLS_ENABLED } from '../config/buildInfo';
 import { useLanguage } from '../context/LanguageContext';
 import PlatformSelector from '../components/PlatformSelector';
 import StyleSelector from '../components/StyleSelector';
@@ -237,14 +238,29 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
       return;
     }
     if (remainingCount <= 0) {
-      Alert.alert(
-        t('daily_limit_reached'),
-        t('daily_limit_reached_desc'),
-        [
-          { text: t('not_now'), style: 'cancel' },
-          { text: t('upgrade_pro'), style: 'default', onPress: () => navigation?.navigate('Profile') },
-        ]
-      );
+      const limitButtons = [
+        { text: t('not_now'), style: 'cancel' },
+        { text: t('upgrade_pro'), style: 'default', onPress: () => navigation?.navigate('Profile') },
+      ];
+      // QA-only: recover the free quota on the spot instead of hunting through
+      // Profile settings. Gated by TEST_TOOLS_ENABLED (see src/config/buildInfo).
+      if (TEST_TOOLS_ENABLED) {
+        limitButtons.push({
+          text: t('dev_reset_today'),
+          onPress: async () => {
+            try {
+              await resetDailyUsage();
+              const sub = await getSubscriptionState();
+              setSubscriptionState(sub);
+              setRemainingCount(await getRemainingCount());
+              Alert.alert(t('dev_reset_done'));
+            } catch (e) {
+              console.warn('[GenerateScreen] dev quota reset failed:', e);
+            }
+          },
+        });
+      }
+      Alert.alert(t('daily_limit_reached'), t('daily_limit_reached_desc'), limitButtons);
       return;
     }
 

@@ -77,15 +77,40 @@ if [ -f node_modules/react-native/React/Base/RCTAssert.m ]; then
 else
   echo "WARN: RCTAssert.m not found (react-native may have changed)"; fi
 
-# ---- API key for Bailian / qwen (EXPO_PUBLIC_* are inlined at build time) ----
-# Prefer Xcode Cloud workflow environment variables; fall back to inline key.
-if [ -z "$EXPO_PUBLIC_BAILIAN_API_KEY" ]; then
-  EXPO_PUBLIC_BAILIAN_API_KEY="sk-746292e90c864a959c48e36e23b9912f"
-  EXPO_PUBLIC_DASHSCOPE_API_KEY="sk-746292e90c864a959c48e36e23b9912f"
+# ---- API keys (EXPO_PUBLIC_* are inlined into the JS bundle at build time) ----
+# FIX (2026-09-13): this block previously ended in
+#     printf '...BAILIAN...\n...DASHSCOPE...\n' > .env
+# which REPLACED the entire file and silently deleted EXPO_PUBLIC_ASR_API_KEY
+# (the Singapore workspace key committed in .env). Voice input then fell back to
+# the US-region text key and every realtime-ASR handshake failed with 401/timeout
+# while the in-app diagnostic still reported the correct endpoint + model.
+#
+# Never clobber .env: upsert only the keys we own and leave everything else
+# (notably EXPO_PUBLIC_ASR_API_KEY) untouched. A key explicitly provided by the
+# Xcode Cloud workflow still wins over the committed value.
+upsert_env() {
+  _key="$1"
+  _val="$2"
+  if [ -z "$_val" ]; then
+    return 0
+  fi
+  if [ ! -f .env ]; then
+    : > .env
+  fi
+  if grep -qE "^${_key}=" .env; then
+    _tmp="$(mktemp)"
+    grep -vE "^${_key}=" .env > "$_tmp" || true
+    mv "$_tmp" .env
+  fi
+  printf '%s=%s\n' "$_key" "$_val" >> .env
+}
+
+upsert_env EXPO_PUBLIC_BAILIAN_API_KEY  "${EXPO_PUBLIC_BAILIAN_API_KEY:-sk-746292e90c864a959c48e36e23b9912f}"
+upsert_env EXPO_PUBLIC_DASHSCOPE_API_KEY "${EXPO_PUBLIC_DASHSCOPE_API_KEY:-sk-746292e90c864a959c48e36e23b9912f}"
+if [ -n "$EXPO_PUBLIC_ASR_API_KEY" ]; then
+  upsert_env EXPO_PUBLIC_ASR_API_KEY "$EXPO_PUBLIC_ASR_API_KEY"
 fi
-printf 'EXPO_PUBLIC_BAILIAN_API_KEY=%s\nEXPO_PUBLIC_DASHSCOPE_API_KEY=%s\n' \
-  "$EXPO_PUBLIC_BAILIAN_API_KEY" "$EXPO_PUBLIC_DASHSCOPE_API_KEY" > .env
-echo "[ci] .env written"
+echo "[ci] .env keys: $(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' .env | tr '\n' ' ')"
 
 # ---- Clear any stale native project before regenerating it ----
 # NOTE: we deliberately do NOT use "expo prebuild --clean". It deletes the whole

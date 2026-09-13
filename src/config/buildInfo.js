@@ -6,10 +6,15 @@
 // than the latest commit, the installed build is stale (TestFlight
 // did not pick up the new build).
 // ============================================================
-export const BUILD_STAMP = 'asr-sgkey-privatews · 2026-09-13 · +diag+IAPdiag+ASRkey+final';
+export const BUILD_STAMP = 'asr-keybaked-ci-fix · 2026-09-13 · +diag+IAPdiag+ASRkey';
 
 // Git commit / branch this build was cut from (informational)
-export const BUILD_COMMIT = 'main@asr-sgkey-privatews (pushed)';
+export const BUILD_COMMIT = 'main@asr-keybaked-ci-fix (pending push)';
+
+// QA-only tools (e.g. the quota-reset entries in Profile / the daily-limit
+// dialog). Flip this to false BEFORE submitting to the App Store — while it is
+// true a user can bypass the free 3/day generation limit.
+export const TEST_TOOLS_ENABLED = true;
 
 // Bump this string on every meaningful fix commit so we can tell
 // builds apart from the device without reading logs.

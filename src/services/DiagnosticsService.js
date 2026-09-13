@@ -13,23 +13,13 @@
 import { Platform } from 'react-native';
 import { getBuildStamp, BUILD_COMMIT } from '../config/buildInfo';
 import { getIAPDiagnostics, isUsingStub, fetchProducts } from '../services/IAPService';
-
-// Keep in sync with VoiceInput.js config block.
-// ASR requires a REGION-MATCHED key (Singapore ap-southeast-1 / Beijing cn-beijing);
-// the US-region text-gen key fails the realtime-ASR handshake with 401.
-const ASR_API_KEY =
-  process.env.EXPO_PUBLIC_ASR_API_KEY ||
-  process.env.EXPO_PUBLIC_BAILIAN_API_KEY ||
-  process.env.EXPO_PUBLIC_DASHSCOPE_API_KEY ||
-  '';
-const ASR_KEY_SOURCE = process.env.EXPO_PUBLIC_ASR_API_KEY
-  ? 'EXPO_PUBLIC_ASR_API_KEY'
-  : 'FALLBACK BAILIAN/DASHSCOPE (US key → realtime ASR 401)';
-const PARAFORMER_WS_URL =
-  process.env.EXPO_PUBLIC_PARAFORMER_WS_URL ||
-  'wss://ws-6f52kltpls7886bp.ap-southeast-1.maas.aliyuncs.com/api-ws/v1/inference';
-const PARAFORMER_MODEL =
-  process.env.EXPO_PUBLIC_PARAFORMER_MODEL || 'fun-asr-realtime';
+import {
+  ASR_API_KEY,
+  ASR_KEY_SOURCE,
+  ASR_KEY_REGION_MATCHED,
+  ASR_WS_URL as PARAFORMER_WS_URL,
+  ASR_MODEL as PARAFORMER_MODEL,
+} from '../config/asrConfig';
 
 const WS_PROBE_TIMEOUT = 12000;
 
@@ -171,7 +161,7 @@ export async function collectDiagnostics() {
   section('诊断 · 语音识别（服务器）');
   report.push({ label: 'ASR 端点', value: PARAFORMER_WS_URL, status: 'info' });
   report.push({ label: '模型', value: PARAFORMER_MODEL, status: 'info' });
-  report.push({ label: 'Key 来源', value: ASR_KEY_SOURCE, status: process.env.EXPO_PUBLIC_ASR_API_KEY ? 'ok' : 'warn' });
+  report.push({ label: 'Key 来源', value: ASR_KEY_SOURCE, status: ASR_KEY_REGION_MATCHED ? 'ok' : 'warn' });
   report.push({ label: 'API Key', value: maskKey(ASR_API_KEY), status: ASR_API_KEY ? 'ok' : 'fail' });
 
   // Voice WS probe

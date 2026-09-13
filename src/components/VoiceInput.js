@@ -41,31 +41,28 @@ import {
 } from 'expo-audio';
 import { COLORS, SPACING, FONT_SIZE, RADIUS, getTheme } from '../themes/theme';
 import { useLanguage } from '../context/LanguageContext';
+import {
+  ASR_API_KEY,
+  ASR_WS_URL as PARAFORMER_WS_URL,
+  ASR_MODEL as PARAFORMER_MODEL,
+  ASR_KEY_SOURCE,
+} from '../config/asrConfig';
 
 // ── Config ──────────────────────────────────────────────────
 // ASR needs a REGION-MATCHED key: realtime ASR is only served by
 // cn-beijing / ap-southeast-1, and keys are region-specific.
-const ASR_API_KEY =
-  process.env.EXPO_PUBLIC_ASR_API_KEY ||
-  process.env.EXPO_PUBLIC_BAILIAN_API_KEY ||
-  process.env.EXPO_PUBLIC_DASHSCOPE_API_KEY ||
-  '';
-const PARAFORMER_WS_URL =
-  process.env.EXPO_PUBLIC_PARAFORMER_WS_URL ||
-  'wss://ws-6f52kltpls7886bp.ap-southeast-1.maas.aliyuncs.com/api-ws/v1/inference';
-const PARAFORMER_MODEL =
-  process.env.EXPO_PUBLIC_PARAFORMER_MODEL || 'fun-asr-realtime';
+// ASR_API_KEY / PARAFORMER_WS_URL / PARAFORMER_MODEL are imported from
+// ../config/asrConfig, which bakes the Singapore key into the JS bundle — the
+// Xcode Cloud CI script used to rewrite .env and drop EXPO_PUBLIC_ASR_API_KEY.
 
 // Startup diagnostics — verify ASR endpoint + model are wired correctly
 console.log('[VoiceInput] ASR config:');
 console.log('  WS URL  :', PARAFORMER_WS_URL);
 console.log('  Model   :', PARAFORMER_MODEL);
-console.log('  Key src :', process.env.EXPO_PUBLIC_ASR_API_KEY
-  ? 'EXPO_PUBLIC_ASR_API_KEY'
-  : 'FALLBACK (BAILIAN/DASHSCOPE — US-region key, realtime ASR will 401!)');
+console.log('  Key src :', ASR_KEY_SOURCE);
 console.log('  API Key :', ASR_API_KEY
   ? `${ASR_API_KEY.slice(0, 8)}...${ASR_API_KEY.slice(-4)} (len=${ASR_API_KEY.length})`
-  : '(EMPTY — set EXPO_PUBLIC_ASR_API_KEY to a Singapore/Beijing key)');
+  : '(EMPTY)');
 
 const AUDIO_CONFIG = {
   sampleRate: 16000,

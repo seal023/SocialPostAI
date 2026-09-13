@@ -43,6 +43,7 @@ import { getPermissions } from '../utils/permissions';
 import BrandVoiceScreen from './BrandVoiceScreen';
 import ResultDrawer from '../components/ResultDrawer';
 import DiagnosticsPanel from '../components/DiagnosticsPanel';
+import { TEST_TOOLS_ENABLED } from '../config/buildInfo';
 import { BackgroundDecorator, CornerBrackets, getCardStyle, getStatusBarStyle } from '../components/StyleDecorator';
 
 // Privacy & Terms URLs
@@ -820,13 +821,15 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
             onPress={() => Alert.alert(t('contact_us'), t('contact_desc'))}
             t={t}
           />
-          <SettingRow
-            item={{ id: 'dev_reset', icon: '🧪', titleKey: 'dev_reset_quota' }}
-            isLast={false}
-            theme={theme}
-            onPress={handleDevReset}
-            t={t}
-          />
+          {TEST_TOOLS_ENABLED && (
+            <SettingRow
+              item={{ id: 'dev_reset', icon: '🧪', titleKey: 'dev_reset_quota' }}
+              isLast={false}
+              theme={theme}
+              onPress={handleDevReset}
+              t={t}
+            />
+          )}
           <SettingRow
             item={{ id: 'rate', icon: '⭐', titleKey: 'rate_app' }}
             isLast={false}

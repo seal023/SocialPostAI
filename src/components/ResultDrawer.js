@@ -361,7 +361,11 @@ export default function ResultDrawer({
             {/* Cultural check — Pro only */}
             {permissions?.canUseCulturalCheck ? (
               <View style={styles.culturalCheckWrapper}>
-                <CulturalCheck text={editedText} themeName={themeName} />
+                <CulturalCheck
+                  text={editedText}
+                  themeName={themeName}
+                  onApply={handleTextChanged}
+                />
               </View>
             ) : (
               <TouchableOpacity

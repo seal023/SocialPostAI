@@ -19,6 +19,7 @@ import {
   ASR_KEY_REGION_MATCHED,
   ASR_WS_URL as PARAFORMER_WS_URL,
   ASR_MODEL as PARAFORMER_MODEL,
+  buildRunTaskPayload,
 } from '../config/asrConfig';
 
 const WS_PROBE_TIMEOUT = 12000;
@@ -64,21 +65,11 @@ export function runVoiceWsProbe() {
     const fail = (reason) => done({ ok: false, reason });
 
     ws.onopen = () => {
-      // Connected to the ASR gateway — send run-task and wait for start
+      // Connected to the ASR gateway — send run-task and wait for start.
+      // Uses the SAME payload builder as the real mic flow (VoiceInput.js) so
+      // a probe success always implies the mic flow can handshake too.
       try {
-        ws.send(
-          JSON.stringify({
-            header: { action: 'run-task', task_id: 'diag-probe', streaming: 'duplex' },
-            payload: {
-              task_group: 'audio',
-              task: 'asr',
-              function: 'recognition',
-              model: PARAFORMER_MODEL,
-              input: {},
-              parameters: { format: 'pcm', sample_rate: 16000, language_hints: ['zh', 'en'] },
-            },
-          })
-        );
+        ws.send(JSON.stringify(buildRunTaskPayload('diag-probe')));
       } catch (e) {
         fail(`send:${e?.message || e}`);
         return;

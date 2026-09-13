@@ -65,6 +65,15 @@ const zh = {
   cultural_no_issues: '未检测到文化风险',
   cultural_safe: '您的文案对全球受众是文化安全的',
   cultural_suggestions: '💡 修改建议：',
+  cultural_apply: '一键修改',
+  cultural_apply_title: '应用文化适配修改',
+  cultural_apply_desc: '将按以下建议替换文案，确认后生效：',
+  cultural_no_change: '未发现可自动修改的内容',
+  cultural_apply_emoji: '表情数量 {before} → {after}（仅保留关键表情）',
+  cultural_manual_title: '需手动调整的项目',
+  cultural_manual_desc: '以下内容无法自动替换（避免误改价格、日期、数量等关键信息），请手动修改：',
+  cultural_manual_after: '已应用自动修改。以下内容仍需你手动确认：',
+  cultural_manual_more: '… 以及另外 {count} 项',
 
   // History screen
   history: '历史',

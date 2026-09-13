@@ -65,3 +65,47 @@ export function maskAsrKey(key) {
   if (key.length <= 12) return `${key.slice(0, 2)}•••${key.slice(-2)} (len=${key.length})`;
   return `${key.slice(0, 8)}…${key.slice(-4)} (len=${key.length})`;
 }
+
+// ============================================================
+// run-task / finish-task payloads — SINGLE SOURCE OF TRUTH
+// ------------------------------------------------------------
+// Both VoiceInput (the real mic flow) and DiagnosticsService (the WS
+// probe) build their run-task message here, so the two can never drift
+// apart again.
+//
+// WHY THE PARAMETER SET IS THIS SMALL
+// The private Singapore workspace ONLY accepts
+//     { format, sample_rate, language_hints }
+// An earlier revision of VoiceInput additionally sent the paraformer-only
+// switches (punctuation_prediction_enabled, inverse_text_normalization_enabled,
+// heartbeat, max_sentence_silence). The server rejected that task and closed
+// the socket BEFORE task-started, so the UI only ever showed the generic
+// "network error" — while the diagnostics probe (minimal params, same key,
+// same endpoint) kept reporting task-started. That contrast is what
+// pinpointed the extra parameters as the culprit, so do NOT add switches
+// back here without re-verifying against the endpoint.
+// ============================================================
+export function buildRunTaskPayload(taskId, { sampleRate = 16000 } = {}) {
+  return {
+    header: { action: 'run-task', task_id: taskId, streaming: 'duplex' },
+    payload: {
+      task_group: 'audio',
+      task: 'asr',
+      function: 'recognition',
+      model: ASR_MODEL,
+      input: {},
+      parameters: {
+        format: 'pcm',
+        sample_rate: sampleRate,
+        language_hints: ['zh', 'en'],
+      },
+    },
+  };
+}
+
+export function buildFinishTaskPayload(taskId) {
+  return {
+    header: { action: 'finish-task', task_id: taskId, streaming: 'duplex' },
+    payload: { input: {} },
+  };
+}

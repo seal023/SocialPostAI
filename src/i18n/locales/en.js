@@ -65,6 +65,15 @@ const en = {
   cultural_no_issues: 'No cultural issues detected',
   cultural_safe: 'Your copy appears culturally safe for global audiences',
   cultural_suggestions: '💡 Suggestions:',
+  cultural_apply: 'Apply All Fixes',
+  cultural_apply_title: 'Apply cultural fixes',
+  cultural_apply_desc: 'The following replacements will be applied to your copy:',
+  cultural_no_change: 'Nothing to change automatically',
+  cultural_apply_emoji: 'Emoji count {before} → {after} (key emojis only)',
+  cultural_manual_title: 'Items to Adjust Manually',
+  cultural_manual_desc: 'These items cannot be auto-replaced (to avoid corrupting prices, dates or counts). Please edit them manually:',
+  cultural_manual_after: 'Auto-fixes applied. These still need your review:',
+  cultural_manual_more: '… and {count} more',
 
   // History screen
   history: 'History',

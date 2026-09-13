@@ -46,6 +46,8 @@ import {
   ASR_WS_URL as PARAFORMER_WS_URL,
   ASR_MODEL as PARAFORMER_MODEL,
   ASR_KEY_SOURCE,
+  buildRunTaskPayload,
+  buildFinishTaskPayload,
 } from '../config/asrConfig';
 
 // ── Config ──────────────────────────────────────────────────
@@ -104,6 +106,10 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
   const taskIdRef = useRef(null);
   const finalTextRef = useRef('');
   const taskStartedResolveRef = useRef(null);
+  // Human-readable reason for the last failure (close code / task-failed code).
+  // Surfaced in the alert so a device screenshot pinpoints the cause instead of
+  // showing a generic "network error".
+  const lastFailRef = useRef(null);
 
   // ── Audio stream hook ─────────────────────────────────────
   const handleAudioBuffer = useCallback((buffer) => {
@@ -148,10 +154,19 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
         console.log('[VoiceInput] Task finished');
         break;
 
-      case 'task-failed':
-        console.error('[VoiceInput] Task failed:', header.error_message, header.error_code);
-        Alert.alert(t('voice_error'), header.error_message || t('voice_error_desc'));
+      case 'task-failed': {
+        const code = header.error_code || '';
+        const msg = header.error_message || '';
+        console.error('[VoiceInput] Task failed:', code, msg);
+        lastFailRef.current = `task-failed ${code}`.trim();
+        taskStartedResolveRef.current?.(null);
+        taskStartedResolveRef.current = null;
+        Alert.alert(
+          t('voice_error'),
+          `${code ? `[${code}] ` : ''}${msg || t('voice_error_desc')}`
+        );
         break;
+      }
 
       default:
         break;
@@ -169,6 +184,7 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
       const taskId = generateUUID();
       taskIdRef.current = taskId;
       taskStartedResolveRef.current = resolve;
+      lastFailRef.current = null;
 
       const ws = new WebSocket(PARAFORMER_WS_URL, null, {
         headers: { Authorization: `Bearer ${ASR_API_KEY}` },
@@ -176,32 +192,11 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
 
       ws.onopen = () => {
         console.log('[VoiceInput] WebSocket connected, sending run-task');
+        // Payload comes from asrConfig so the mic flow and the diagnostics
+        // probe always send byte-identical parameters (see asrConfig.js for
+        // why only {format, sample_rate, language_hints} are allowed).
         ws.send(
-          JSON.stringify({
-            header: {
-              action: 'run-task',
-              task_id: taskId,
-              streaming: 'duplex',
-            },
-            payload: {
-              task_group: 'audio',
-              task: 'asr',
-              function: 'recognition',
-              model: PARAFORMER_MODEL,
-              input: {},
-              parameters: {
-                format: 'pcm',
-                sample_rate: AUDIO_CONFIG.sampleRate,
-                // Fun-ASR: auto language detection (zh/en code-switching) + punctuation
-                language_hints: ['zh', 'en'],
-                punctuation_prediction_enabled: true,
-                inverse_text_normalization_enabled: true,
-                // heartbeat prevents the server from closing an idle connection
-                heartbeat: true,
-                max_sentence_silence: 800,
-              },
-            },
-          })
+          JSON.stringify(buildRunTaskPayload(taskId, { sampleRate: AUDIO_CONFIG.sampleRate }))
         );
       };
 
@@ -219,6 +214,7 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
       ws.onerror = (error) => {
         console.error('[VoiceInput] WebSocket error:', error);
         setIsConnecting(false);
+        if (!lastFailRef.current) lastFailRef.current = 'WebSocket onerror';
         reject(new Error('WebSocket connection failed'));
       };
 
@@ -226,6 +222,8 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
         console.log('[VoiceInput] WebSocket closed:', event.code, event.reason);
         setIsConnecting(false);
         if (taskStartedResolveRef.current) {
+          // 1006 = abnormal closure, typical for a rejected handshake (e.g. 401)
+          lastFailRef.current = `close ${event.code ?? '?'}${event.reason ? ` (${event.reason})` : ''}`;
           taskStartedResolveRef.current(null);
           taskStartedResolveRef.current = null;
         }
@@ -274,16 +272,7 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
         if (originalOnMessage) originalOnMessage(event);
       };
 
-      ws.send(
-        JSON.stringify({
-          header: {
-            action: 'finish-task',
-            task_id: taskIdRef.current,
-            streaming: 'duplex',
-          },
-          payload: { input: {} },
-        })
-      );
+      ws.send(JSON.stringify(buildFinishTaskPayload(taskIdRef.current)));
     });
   }, [handleMessage]);
 
@@ -403,7 +392,11 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
       if (!started) {
         setIsConnecting(false);
         setOverlayVisible(false);
-        Alert.alert(t('voice_error'), t('voice_ws_error'));
+        const detail = lastFailRef.current;
+        Alert.alert(
+          t('voice_error'),
+          detail ? `${t('voice_ws_error')}\n\n[${detail}]` : t('voice_ws_error')
+        );
         return;
       }
 

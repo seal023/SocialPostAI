@@ -18,8 +18,8 @@ import { getIAPDiagnostics, isUsingStub, fetchProducts } from '../services/IAPSe
 const BAILIAN_API_KEY = process.env.EXPO_PUBLIC_BAILIAN_API_KEY || '';
 const PARAFORMER_WS_URL =
   process.env.EXPO_PUBLIC_PARAFORMER_WS_URL ||
-  'wss://ws-6f52kltpls7886bp.ap-southeast-1.maas.aliyuncs.com/api-ws/v1/inference';
-const PARAFORMER_MODEL = 'fun-asr-realtime';
+  'wss://dashscope-realtime.oss-cn-beijing.aliyuncs.com/api-ws/v1/inference';
+const PARAFORMER_MODEL = 'paraformer-realtime';
 
 const WS_PROBE_TIMEOUT = 12000;
 
@@ -54,7 +54,7 @@ export function runVoiceWsProbe() {
     let ws;
     try {
       ws = new WebSocket(PARAFORMER_WS_URL, null, {
-        headers: { Authorization: `Bearer ${BAILIAN_API_KEY}` },
+        headers: { 'X-DashScope-ApiKey': BAILIAN_API_KEY },
       });
     } catch (e) {
       done({ ok: false, reason: `ws-ctor:${e?.message || e}` });

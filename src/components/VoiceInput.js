@@ -1,12 +1,14 @@
 // ============================================================
 // VoiceInput — Real-time speech-to-text with recording overlay
 // Flow: tap mic → half-screen overlay → expo-audio useAudioStream (PCM 16kHz)
-//       → WebSocket fun-asr-realtime (Singapore) → real-time transcript
+//       → WebSocket paraformer-realtime (DashScope public gateway) → real-time transcript
 //
-// NOTE: ASR uses the Singapore (ap-southeast-1) MaaS endpoint with the
-// fun-asr-realtime model. The API key is a workspace-scoped Singapore key
-// (EXPO_PUBLIC_BAILIAN_API_KEY in .env). Text generation stays on the US
-// node independently — the two services use different keys and endpoints.
+// NOTE: ASR uses the PUBLIC DashScope real-time ASR gateway
+// (wss://dashscope-realtime.oss-cn-beijing.aliyuncs.com) with the
+// paraformer-realtime model, authenticated via the X-DashScope-ApiKey
+// header using the SAME DashScope key (EXPO_PUBLIC_BAILIAN_API_KEY) that
+// text generation uses. The two services now share one key/endpoint family
+// (the previous private ap-southeast-1 MaaS workspace rejected this key).
 // ============================================================
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -33,13 +35,13 @@ import { COLORS, SPACING, FONT_SIZE, RADIUS, getTheme } from '../themes/theme';
 import { useLanguage } from '../context/LanguageContext';
 
 // ── Config ──────────────────────────────────────────────────
-// ASR uses the Singapore (ap-southeast-1) MaaS endpoint with fun-asr-realtime.
-// The API key is a workspace-scoped Singapore key from .env.
+// ASR uses the PUBLIC DashScope real-time ASR gateway (Beijing) with paraformer-realtime.
+// Authenticated via X-DashScope-ApiKey header (same DashScope key as text generation).
 const BAILIAN_API_KEY = process.env.EXPO_PUBLIC_BAILIAN_API_KEY || '';
 const PARAFORMER_WS_URL =
   process.env.EXPO_PUBLIC_PARAFORMER_WS_URL ||
-  'wss://ws-6f52kltpls7886bp.ap-southeast-1.maas.aliyuncs.com/api-ws/v1/inference';
-const PARAFORMER_MODEL = 'fun-asr-realtime';
+  'wss://dashscope-realtime.oss-cn-beijing.aliyuncs.com/api-ws/v1/inference';
+const PARAFORMER_MODEL = 'paraformer-realtime';
 
 // Startup diagnostics — verify ASR endpoint + model are wired correctly
 console.log('[VoiceInput] ASR config:');
@@ -156,7 +158,7 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
       taskStartedResolveRef.current = resolve;
 
       const ws = new WebSocket(PARAFORMER_WS_URL, null, {
-        headers: { Authorization: `Bearer ${BAILIAN_API_KEY}` },
+        headers: { 'X-DashScope-ApiKey': BAILIAN_API_KEY },
       });
 
       ws.onopen = () => {
@@ -177,12 +179,8 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
               parameters: {
                 format: 'pcm',
                 sample_rate: AUDIO_CONFIG.sampleRate,
-                // Auto language detection — Paraformer supports zh/en/ja/ko etc.
+                // Auto language detection — Paraformer supports zh/en code-switching
                 language_hints: ['zh', 'en'],
-                punctuation_prediction_enabled: true,
-                inverse_text_normalization_enabled: true,
-                heartbeat: true,
-                max_sentence_silence: 800,
               },
             },
           })

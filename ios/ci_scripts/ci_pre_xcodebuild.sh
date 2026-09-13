@@ -6,9 +6,17 @@ echo "[ci_pre_xcodebuild] Build: ${CI_BUILD_NUMBER:-unset}"
 cd "$CI_PRIMARY_REPOSITORY_PATH"
 IOS_DIR="$CI_PRIMARY_REPOSITORY_PATH/ios"
 
-PODS_XCCONFIG="$IOS_DIR/Pods/Target Support Files/Pods-SocialPostAI_V2/Pods-SocialPostAI_V2.release.xcconfig"
+# Detect generated project name dynamically (no hardcoding — survives renames).
+PROJECT_NAME=$(ls "$IOS_DIR"/*.xcodeproj 2>/dev/null | head -n1 | sed 's#.*/##; s#\.xcodeproj$##')
+if [ -z "$PROJECT_NAME" ]; then
+  echo "[ci_pre_xcodebuild] ERROR: no .xcodeproj found in $IOS_DIR"
+  exit 1
+fi
+echo "[ci_pre_xcodebuild] Project name: $PROJECT_NAME"
+
+PODS_XCCONFIG="$IOS_DIR/Pods/Target Support Files/Pods-${PROJECT_NAME}/Pods-${PROJECT_NAME}.release.xcconfig"
 if [ ! -f "$PODS_XCCONFIG" ]; then
-  echo "[ci_pre_xcodebuild] ERROR: Pods xcconfig missing"
+  echo "[ci_pre_xcodebuild] ERROR: Pods xcconfig missing: $PODS_XCCONFIG"
   exit 1
 fi
 

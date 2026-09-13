@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "SocialPostAI_V2",
-    "slug": "SocialPostAI_V2",
+    "name": "SocialPostAI Pro",
+    "slug": "SocialPostAIPro",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

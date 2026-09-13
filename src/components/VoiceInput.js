@@ -102,11 +102,7 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
     channels: AUDIO_CONFIG.channels,
     encoding: AUDIO_CONFIG.encoding,
     onBuffer: handleAudioBuffer,
-<<<<<<< HEAD
   }) || {}; // Defensive: hook may return null in Release builds
-=======
-  });
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
 
   // ── Handle server messages ────────────────────────────────
   const handleMessage = useCallback((message) => {
@@ -336,13 +332,9 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
   // ── Cleanup on unmount ────────────────────────────────────
   useEffect(() => {
     return () => {
-<<<<<<< HEAD
       if (isStreaming && stream && typeof stream.stop === 'function') {
         stream.stop();
       }
-=======
-      if (isStreaming) stream.stop();
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
       cleanupWebSocket();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -351,7 +343,6 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
   // ── Open overlay and start recording ──────────────────────
   const openOverlay = useCallback(async () => {
     try {
-<<<<<<< HEAD
       // 0. Check audio stream availability (expo-audio useAudioStream may return null in Release builds)
       if (!stream || typeof stream.start !== 'function') {
         console.warn('[VoiceInput] Audio stream not available — expo-audio native module uninitialized in Release build');
@@ -363,8 +354,6 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
         return;
       }
 
-=======
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
       // 1. Request microphone permission
       const { status } = await requestRecordingPermissionsAsync();
       if (status !== 'granted') {
@@ -402,7 +391,6 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
         return;
       }
 
-<<<<<<< HEAD
       // 7. Start audio stream (may throw in Release builds — needs its own try-catch)
       if (stream && typeof stream.start === 'function') {
         try {
@@ -433,10 +421,6 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
           return;
         }
       }
-=======
-      // 7. Start audio stream
-      await stream.start();
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
       setIsListening(true);
       setIsConnecting(false);
     } catch (error) {
@@ -444,7 +428,6 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
       cleanupWebSocket();
       setIsConnecting(false);
       setOverlayVisible(false);
-<<<<<<< HEAD
       const errMsg = error?.message || String(error);
       if (errMsg.includes('permission') || errMsg.includes('Permission')) {
         Alert.alert(t('voice_permission_denied'), t('voice_permission_desc'));
@@ -453,9 +436,6 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
       } else {
         Alert.alert(t('voice_error'), t('voice_error_desc'));
       }
-=======
-      Alert.alert(t('voice_error'), t('voice_error_desc'));
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
     }
   }, [stream, connectAndStartTask, cleanupWebSocket, t]);
 
@@ -466,11 +446,7 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
       setIsProcessing(true);
 
       // 1. Stop audio stream
-<<<<<<< HEAD
       if (isStreaming && stream && typeof stream.stop === 'function') {
-=======
-      if (isStreaming) {
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
         stream.stop();
       }
 

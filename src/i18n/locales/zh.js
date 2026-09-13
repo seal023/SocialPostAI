@@ -219,20 +219,14 @@ const zh = {
   voice_permission_desc: '请在设置中开启麦克风权限以使用语音输入。',
   voice_error: '语音识别错误',
   voice_error_desc: '语音识别遇到错误，请重试。',
-<<<<<<< HEAD
   voice_unavailable_title: '语音输入暂不可用',
   voice_unavailable_desc: '当前版本语音输入功能暂不可用，请使用键盘输入主题。',
-=======
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   voice_no_api_key: 'API 密钥未配置，请设置 EXPO_PUBLIC_BAILIAN_API_KEY。',
   voice_no_speech: '未检测到语音，请重试。',
   voice_connecting: '正在连接语音识别服务...',
   voice_ws_error: '语音识别服务连接失败，请检查网络后重试。',
-<<<<<<< HEAD
   voice_stream_error: '当前版本语音输入功能暂不可用，请使用键盘输入主题。',
   voice_mic_busy: '麦克风被其他应用占用，请关闭后重试。',
-=======
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   voice_listening: '正在聆听...',
   voice_stop: '停止录音',
   voice_hint: '请开始说话...',
@@ -391,6 +385,13 @@ const zh = {
   feature_locked_upgrade: '此功能需要 Pro 版本，升级后可使用。',
   upgrade_to_unlock: '升级解锁',
   locked: '已锁定',
+
+  // Developer / Testing — quota reset (QA builds only)
+  dev_reset_quota: '恢复测试额度',
+  dev_reset_quota_desc: '此操作会重置免费生成次数，仅用于测试。',
+  dev_reset_today: '重置今日免费次数',
+  dev_reset_trial: '恢复 7 天试用',
+  dev_reset_done: '已重置，可以开始测试了。',
 };
 
 export default zh;

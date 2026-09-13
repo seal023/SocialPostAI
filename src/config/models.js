@@ -14,15 +14,11 @@ providers: {
       label: '阿里百炼',
       model: 'qwen3.7-plus',
       endpoint: 'https://dashscope-us.aliyuncs.com/compatible-mode/v1',
-<<<<<<< HEAD
       // ⚠️ SECURITY: never hardcode a real key here — it ships inside the binary.
       // Read from EXPO_PUBLIC_* env vars (injected via .env at build time by EAS).
       apiKey: process.env.EXPO_PUBLIC_BAILIAN_API_KEY
         || process.env.EXPO_PUBLIC_DASHSCOPE_API_KEY
         || '',
-=======
-      apiKey: 'sk-746292e90c864a959c48e36e23b9912f',
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
       enabled: true,
       icon: '🟠',
       fallback: 'openai',

@@ -51,18 +51,12 @@ export class BailianProvider {
           { role: 'system', content: prompt.system },
           { role: 'user', content: prompt.user },
         ],
-<<<<<<< HEAD
         // Low temperature is critical for language compliance — high temperature (0.85+)
         // causes qwen to ignore the "output in Chinese only" instruction and mix languages.
         // Range: 0.35–0.50, with a small bump for casual tones to keep copy lively.
         temperature: 0.35 + (params.tone > 5 ? 0.15 : 0),
         max_tokens: Math.max(800, params.wordCount + 200),
         top_p: 0.85,
-=======
-        temperature: 0.85 + (params.tone > 5 ? 0.15 : -0.15),
-        max_tokens: Math.max(800, params.wordCount + 200),
-        top_p: 0.9,
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
         enable_thinking: false,
       };
 

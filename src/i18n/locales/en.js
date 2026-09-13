@@ -219,20 +219,14 @@ const en = {
   voice_permission_desc: 'Please enable microphone access in Settings to use voice input.',
   voice_error: 'Voice Error',
   voice_error_desc: 'Speech recognition encountered an error. Please try again.',
-<<<<<<< HEAD
   voice_unavailable_title: 'Voice Input Unavailable',
   voice_unavailable_desc: 'Voice input is temporarily unavailable in this build. Please type your topic using the keyboard.',
-=======
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   voice_no_api_key: 'API key not configured. Please set EXPO_PUBLIC_BAILIAN_API_KEY.',
   voice_no_speech: 'No speech detected. Please try again.',
   voice_connecting: 'Connecting to speech recognition service...',
   voice_ws_error: 'Speech recognition service connection failed. Please check your network and retry.',
-<<<<<<< HEAD
   voice_stream_error: 'Voice input is temporarily unavailable in this build. Please type your topic using the keyboard.',
   voice_mic_busy: 'The microphone is occupied by another app. Please close it and try again.',
-=======
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   voice_listening: 'Listening...',
   voice_stop: 'Stop Recording',
   voice_hint: 'Start speaking...',
@@ -391,6 +385,13 @@ const en = {
   feature_locked_upgrade: 'This feature requires Pro. Upgrade to unlock.',
   upgrade_to_unlock: 'Upgrade to Unlock',
   locked: 'Locked',
+
+  // Developer / Testing — quota reset (QA builds only)
+  dev_reset_quota: 'Reset Test Quota',
+  dev_reset_quota_desc: 'This resets your free generation count. For testing only.',
+  dev_reset_today: 'Reset today\'s free count',
+  dev_reset_trial: 'Restore 7-day trial',
+  dev_reset_done: 'Reset complete — you can start testing now.',
 };
 
 export default en;

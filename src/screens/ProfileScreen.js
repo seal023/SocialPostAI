@@ -33,6 +33,8 @@ import {
   loadProductInfo,
   purchasePro,
   restoreProPurchase,
+  resetDailyUsage,
+  resetTrialForTesting,
   PRODUCT_IDS,
 } from '../utils/subscription';
 import { useLanguage } from '../context/LanguageContext';
@@ -49,32 +51,19 @@ const TERMS_URL = 'https://seal023.github.io/terms-of-service/';
 // Pricing tiers — will be loaded dynamically from StoreKit via IAP
 // Fallback values used until products are fetched
 // ⚠️  Product IDs must EXACTLY match App Store Connect configuration.
-<<<<<<< HEAD
 //     Current (per Apple review): com.seal023.socialpostai.monthly / com.seal023.socialpostai.annual
-=======
-//     Current (per Apple review): com.seal.socialpostai.monthly / com.seal.socialpostai.annual
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
 //     Trial duration on App Store Connect: 7 days.
 let PROFILE_TIERS = [
   {
     id: 'monthly',
     productId: PRODUCT_IDS.MONTHLY,
     label: 'Monthly',
-<<<<<<< HEAD
     price: '$5.99',
     period: '/mo',
     priceValue: 5.99,
     introPrice: 'Free',
     introPeriod: '7 days',
     introNote: 'Start 7-day free trial, then $5.99/mo',
-=======
-    price: '$6.99',
-    period: '/mo',
-    priceValue: 6.99,
-    introPrice: 'Free',
-    introPeriod: '7 days',
-    introNote: 'Start 7-day free trial, then $6.99/mo',
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
     isLoading: true,
   },
   {
@@ -139,7 +128,6 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
   // Check Apple ID login status and permissions on mount
   useEffect(() => {
     (async () => {
-<<<<<<< HEAD
       try {
         const authState = await getAppleAuthState();
         if (authState.isLoggedIn) {
@@ -150,14 +138,6 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
         const perms = await getPermissions();
         setPermissions(perms);
       } catch (e) {}
-=======
-      const authState = await getAppleAuthState();
-      if (authState.isLoggedIn) {
-        setAppleUser(authState.user);
-      }
-      const perms = await getPermissions();
-      setPermissions(perms);
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
     })();
   }, []);
 
@@ -169,7 +149,6 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
     }, [])
   );
 
-<<<<<<< HEAD
   // 每一步独立 try-catch：任何一步失败只让对应 state 保持默认值，
   // 绝不冒泡成 unhandled rejection（iOS 26 + A18 Pro + Release 下会被
   // 框架 reportException 放大成原生崩溃）。
@@ -223,41 +202,6 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
           setIapProducts(products);
         }
       } catch (e) {}
-=======
-  const loadData = async () => {
-    const usageStats = await getUsageStats();
-    setStats(usageStats);
-    const favs = await getFavorites();
-    setFavorites(favs);
-    const bvSamples = await getBrandVoiceSamples();
-    setBrandVoiceCount(bvSamples.length);
-    const subState = await getSubscriptionState();
-    setSubscriptionState(subState);
-    const profile = await loadUserProfile();
-    setUserProfile(profile);
-
-    // Load IAP products if not already loaded
-    if (!iapProducts) {
-      const products = await loadProductInfo();
-      if (products && products.length > 0) {
-        // Merge real prices into PROFILE_TIERS
-        PROFILE_TIERS = PROFILE_TIERS.map((tier) => {
-          const product = products.find((p) => p.productId === tier.productId);
-          if (product) {
-            return {
-              ...tier,
-              price: product.localizedPrice || product.price,
-              priceValue: product.priceValue,
-              description: product.description,
-              isLoading: false,
-              isFallback: product.isFallback || false,
-            };
-          }
-          return { ...tier, isLoading: false };
-        });
-        setIapProducts(products);
-      }
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
     }
   };
 
@@ -416,6 +360,43 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
     } finally {
       setIsRestoring(false);
     }
+  };
+
+  // ---- Developer: reset quota (QA / testing only) ----
+  const handleDevReset = () => {
+    Alert.alert(
+      t('dev_reset_quota'),
+      t('dev_reset_quota_desc'),
+      [
+        {
+          text: t('dev_reset_today'),
+          onPress: async () => {
+            try {
+              await resetDailyUsage();
+              const newSubState = await getSubscriptionState();
+              setSubscriptionState(newSubState);
+              Alert.alert(t('dev_reset_done'));
+            } catch (e) {
+              console.error('[ProfileScreen] resetDailyUsage failed:', e);
+            }
+          },
+        },
+        {
+          text: t('dev_reset_trial'),
+          onPress: async () => {
+            try {
+              await resetTrialForTesting();
+              const newSubState = await getSubscriptionState();
+              setSubscriptionState(newSubState);
+              Alert.alert(t('dev_reset_done'));
+            } catch (e) {
+              console.error('[ProfileScreen] resetTrialForTesting failed:', e);
+            }
+          },
+        },
+        { text: t('cancel'), style: 'cancel' },
+      ]
+    );
   };
 
   // ---- Apple ID Sign In ----
@@ -835,6 +816,13 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
             isLast={false}
             theme={theme}
             onPress={() => Alert.alert(t('contact_us'), t('contact_desc'))}
+            t={t}
+          />
+          <SettingRow
+            item={{ id: 'dev_reset', icon: '🧪', titleKey: 'dev_reset_quota' }}
+            isLast={false}
+            theme={theme}
+            onPress={handleDevReset}
             t={t}
           />
           <SettingRow

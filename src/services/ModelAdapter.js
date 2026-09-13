@@ -349,7 +349,6 @@ function enforceOutputLanguage(text, outputLanguage) {
       .filter((line) => line.length > 0)
       .join('\n');
 
-<<<<<<< HEAD
     console.log('[ModelAdapter] enforceOutputLanguage(en): removed Chinese chars, len', text.length, '->', cleaned.length);
     return cleaned;
   } else if (outputLanguage === 'zh') {
@@ -396,38 +395,6 @@ function enforceOutputLanguage(text, outputLanguage) {
       .map((line) => {
         const chineseChars = (line.match(/[\u4e00-\u9fff]/g) || []).length;
         const englishChars = (line.match(/[A-Za-z]/g) || []).length;
-=======
-    console.log('[ModelAdapter] enforceOutputLanguage(en): removed Chinese chars, len', text.length, '→', cleaned.length);
-    return cleaned;
-  } else if (outputLanguage === 'zh') {
-    // For Chinese output, remove standalone English sentences (3+ consecutive English words)
-    // But keep: platform names (TikTok, Instagram, etc.), brand names, hashtags, emojis
-    const keepPatterns = [
-      /TikTok|Instagram|Facebook|Twitter|LinkedIn|X\/Twitter/gi,
-      /#[a-zA-Z0-9_]+/g, // Hashtags
-      /https?:\/\/[^\s]+/g, // URLs
-    ];
-
-    // Save patterns that should be kept
-    const placeholders = [];
-    let tempText = text;
-    keepPatterns.forEach((pattern, idx) => {
-      tempText = tempText.replace(pattern, (match) => {
-        placeholders.push(match);
-        return `__KEEP_${idx}_${placeholders.length - 1}__`;
-      });
-    });
-
-    // Remove sequences of 3+ consecutive English words (likely sentences, not names)
-    // English word = sequence of ASCII letters
-    tempText = tempText.replace(/[A-Za-z]{2,}(\s+[A-Za-z]{2,}){2,}/g, '');
-
-    // Remove standalone English sentences (lines that are mostly English)
-    tempText = tempText.split('\n')
-      .map((line) => {
-        const englishChars = (line.match(/[A-Za-z]/g) || []).length;
-        const chineseChars = (line.match(/[\u4e00-\u9fff]/g) || []).length;
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
         // If a line has way more English than Chinese and has 10+ English chars, strip English words
         if (englishChars > 10 && englishChars > chineseChars * 2) {
           return line.replace(/[A-Za-z]{2,}/g, '').trim();
@@ -436,7 +403,6 @@ function enforceOutputLanguage(text, outputLanguage) {
       })
       .join('\n');
 
-<<<<<<< HEAD
     // Step 5: Restore protected patterns
     placeholders.forEach(({ placeholder, value }) => {
       tempText = tempText.replace(placeholder, value);
@@ -456,20 +422,6 @@ function enforceOutputLanguage(text, outputLanguage) {
       .join('\n');
 
     console.log('[ModelAdapter] enforceOutputLanguage(zh): cleaned, len', text.length, '->', tempText.length);
-=======
-    // Restore kept patterns
-    placeholders.forEach((match, idx) => {
-      tempText = tempText.replace(`__KEEP_${Math.floor(idx / keepPatterns.length)}_${idx % keepPatterns.length}__`, match);
-    });
-
-    // Simpler restore: just replace all placeholders
-    let restoreIdx = 0;
-    tempText = tempText.replace(/__KEEP_\d+_\d+__/g, () => placeholders[restoreIdx++] || '');
-
-    tempText = tempText.replace(/\n{3,}/g, '\n\n').trim();
-
-    console.log('[ModelAdapter] enforceOutputLanguage(zh): removed English sentences, len', text.length, '→', tempText.length);
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
     return tempText;
   }
 
@@ -540,7 +492,6 @@ export async function generateCopy({
         const sanitizedText = enforceOutputLanguage(result.text, effectiveLang);
         console.log(`[ModelAdapter] After language enforcement: length ${sanitizedText.length}`);
 
-<<<<<<< HEAD
         // ── Quality gate: if Chinese output has too little Chinese, reject ──
         if (effectiveLang === 'zh') {
           const chineseChars = (sanitizedText.match(/[\u4e00-\u9fff]/g) || []).length;
@@ -555,8 +506,6 @@ export async function generateCopy({
           }
         }
 
-=======
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
         return {
           success: true,
           data: sanitizedText.trim(),

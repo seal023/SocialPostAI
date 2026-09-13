@@ -7,7 +7,6 @@
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-<<<<<<< HEAD
 // ============================================================
 // ⚠️  LAZY LOADING (critical for iOS 26 crash fix)
 // ============================================================
@@ -58,54 +57,15 @@ function loadRNIapModule() {
       RNIap = null;
       console.error('[IAP] Stub also unavailable:', e2.message);
     }
-=======
-// Dynamic loading: try real react-native-iap first, fall back to stub
-// `__isStub` flag tracks whether we're using the no-op stub vs real native module
-let RNIap = null;
-let IS_RNIAP_STUB = true;  // default assume stub until real module loads
-try {
-  const modPath = ['react', 'native', 'iap'].join('-');
-  const realMod = eval('require')(modPath);
-  // Guard: react-native-iap requires native linking. If only the JS shim loads
-  // (e.g. initConnection is not a function), treat it as unavailable.
-  if (realMod && typeof realMod.initConnection === 'function'
-      && typeof realMod.requestSubscription === 'function') {
-    RNIap = realMod;
-    IS_RNIAP_STUB = false;
-    console.log('[IAP] ✅ Real react-native-iap module loaded (native build)');
-  } else {
-    console.warn('[IAP] react-native-iap JS module loaded but missing native methods — falling back to stub');
-  }
-} catch (e) {
-  console.warn('[IAP] react-native-iap not installed — falling back to stub:', e.message);
-}
-if (!RNIap) {
-  try {
-    RNIap = require('./iap-stub').default;
-    IS_RNIAP_STUB = true;
-    console.warn('[IAP] ⚠️  Using IAP STUB — no real purchases will happen. '
-      + 'Install react-native-iap and rebuild Development Build / TestFlight to enable purchases.');
-  } catch (e2) {
-    RNIap = null;
-    console.error('[IAP] Stub also unavailable:', e2.message);
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   }
 }
 
 // ---- Product IDs (must match App Store Connect / Google Play) ----
-<<<<<<< HEAD
 // ✅ Matches ASC config: com.seal023.socialpostai.monthly / com.seal023.socialpostai.annual
 
 export const PRODUCT_IDS = {
   MONTHLY: 'com.seal023.socialpostai.monthly',
   ANNUAL: 'com.seal023.socialpostai.annual',
-=======
-// ✅ Matches ASC config: com.seal.socialpostai.monthly / com.seal.socialpostai.annual
-
-export const PRODUCT_IDS = {
-  MONTHLY: 'com.seal.socialpostai.monthly',
-  ANNUAL: 'com.seal.socialpostai.annual',
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
 };
 
 const ALL_PRODUCT_IDS = [PRODUCT_IDS.MONTHLY, PRODUCT_IDS.ANNUAL];
@@ -151,12 +111,9 @@ export async function initIAP() {
     return;
   }
 
-<<<<<<< HEAD
   // Lazy-load the native module ONLY now (user-initiated, never at app launch)
   loadRNIapModule();
 
-=======
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   if (!RNIap) {
     console.warn('[IAP] Module not available, using stub');
     isInitialized = true;
@@ -181,7 +138,6 @@ export async function initIAP() {
       console.warn('[IAP]     • Android: Not signed in with Google Play account on device');
     }
 
-<<<<<<< HEAD
     // NOTE (2026-08-12): Removed checkExistingPurchases() from launch path.
     // react-native-iap README (#747) explicitly warns that getAvailablePurchases
     // on iOS should ONLY be called during "restore purchases" — calling it at
@@ -189,16 +145,6 @@ export async function initIAP() {
     // which JS try/catch cannot intercept → SIGABRT crash at startup.
     // Purchase restoration is handled by restorePurchases() when the user taps
     // "Restore Purchases" in the subscription modal.
-=======
-    // On iOS, get current purchases to check if already subscribed
-    if (Platform.OS === 'ios') {
-      try {
-        await checkExistingPurchases();
-      } catch (e) {
-        console.warn('[IAP]   checkExistingPurchases failed (non-fatal):', e.message);
-      }
-    }
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
 
     // Set up purchase event listeners
     setupPurchaseListeners();
@@ -255,10 +201,7 @@ function setupPurchaseListeners() {
  * @returns {Promise<Array>} Array of product objects with price, title, etc.
  */
 export async function fetchProducts() {
-<<<<<<< HEAD
   loadRNIapModule();
-=======
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   if (!RNIap) return [];
   try {
     console.log('[IAP] Fetching products:', ALL_PRODUCT_IDS);
@@ -273,7 +216,6 @@ export async function fetchProducts() {
       price: product.price,           // Localized price string (e.g. "$6.99")
       localizedPrice: product.localizedPrice,
       currency: product.currency,
-<<<<<<< HEAD
       // priceValue: numeric price used for sorting / trial-period math.
       // product.price is a LOCALIZED string ("$6.99", "¥38.00") and parseFloat
       // returns NaN on iOS. Prefer the canonical micro-amount field when present
@@ -283,9 +225,6 @@ export async function fetchProducts() {
         ? product.priceAmountMicros / 1000000
         : parseFloat(String(product.price || '').replace(/[^0-9.]/g, ''))
       ) || 0,
-=======
-      priceValue: parseFloat(product.price) || 0,
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
       // iOS-specific subscription period info
       subscriptionPeriodNumberIOS: product.subscriptionPeriodNumberIOS,
       subscriptionPeriodUnitIOS: product.subscriptionPeriodUnitIOS,
@@ -322,10 +261,7 @@ export async function fetchProduct(productId) {
  * @param {string} productId - Product ID to purchase
  */
 export async function purchaseSubscription(productId) {
-<<<<<<< HEAD
   loadRNIapModule();
-=======
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   if (!RNIap) throw new Error('IAP_NOT_AVAILABLE');
   if (IS_RNIAP_STUB) {
     const msg = '[IAP] ❌ Called purchaseSubscription on IAP STUB — real module not loaded. '
@@ -641,10 +577,7 @@ async function acknowledgePurchase(purchase) {
  * @returns {Promise<boolean>} True if a valid subscription was restored
  */
 export async function restorePurchases() {
-<<<<<<< HEAD
   loadRNIapModule();
-=======
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   if (!RNIap) return false;
   try {
     console.log('[IAP] Restoring purchases...');
@@ -720,10 +653,7 @@ export async function restorePurchases() {
  * Called during initIAP to restore state on app relaunch.
  */
 async function checkExistingPurchases() {
-<<<<<<< HEAD
   loadRNIapModule();
-=======
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   if (!RNIap) return;
   try {
     const purchases = await RNIap.getAvailablePurchases();
@@ -824,11 +754,8 @@ export async function clearCachedReceipt() {
  * Call on app unmount or background.
  */
 export function cleanupIAP() {
-<<<<<<< HEAD
   // Pure cleanup — never triggers loading of the native module.
   // (If the module was never loaded, there is nothing to clean.)
-=======
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   if (purchaseUpdateListener) {
     purchaseUpdateListener.remove();
     purchaseUpdateListener = null;
@@ -848,10 +775,7 @@ export function cleanupIAP() {
  * NOT be considered "available" for purchasing.
  */
 export function isIAPAvailable() {
-<<<<<<< HEAD
   loadRNIapModule();
-=======
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
   const available = RNIap !== null
     && !IS_RNIAP_STUB
     && typeof RNIap.initConnection === 'function'

@@ -219,6 +219,31 @@ export async function getTrialDaysLeft() {
 }
 
 /**
+ * [DEV / TEST] Reset today's free generation count to 0.
+ * Used during QA so the 3/day free quota can be recovered without
+ * waiting for the date to roll over.
+ * @returns {Promise<{dailyCount: number, dailyLimit: number}>}
+ */
+export async function resetDailyUsage() {
+  const today = getTodayStr();
+  await saveDailyUsage({ date: today, count: 0 });
+  return { dailyCount: 0, dailyLimit: FREE_DAILY_LIMIT };
+}
+
+/**
+ * [DEV / TEST] Reset to a fresh 7-day trial (unlimited generations).
+ * Used during QA to re-test the trial → paywall flow from a clean state.
+ * @returns {Promise<object>} Full subscription state
+ */
+export async function resetTrialForTesting() {
+  const today = getTodayStr();
+  await saveInstallDate(today);
+  await saveSubscriptionStatus('trial');
+  await saveDailyUsage({ date: today, count: 0 });
+  return getSubscriptionState();
+}
+
+/**
  * Set Pro status (called after successful purchase).
  * @param {boolean} isPro
  */
@@ -331,17 +356,10 @@ function getFallbackProducts() {
       productId: PRODUCT_IDS.MONTHLY,
       title: 'SocialPost AI Monthly',
       description: 'Unlimited AI copy generation',
-<<<<<<< HEAD
       price: '$5.99',
       localizedPrice: '$5.99',
       currency: 'USD',
       priceValue: 5.99,
-=======
-      price: '$6.99',
-      localizedPrice: '$6.99',
-      currency: 'USD',
-      priceValue: 6.99,
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
       isFallback: true,
     },
     {
@@ -359,11 +377,7 @@ function getFallbackProducts() {
 
 /**
  * Initiate a Pro subscription purchase.
-<<<<<<< HEAD
  * @param {string} productId - 'com.seal023.socialpostai.monthly' or 'com.seal023.socialpostai.annual'
-=======
- * @param {string} productId - 'com.seal.socialpostai.monthly' or 'com.seal.socialpostai.annual'
->>>>>>> 12460ba241a064b8de554b017c18b5b025c65ce2
  * @returns {Promise<{success: boolean, error?: string}>}
  */
 export async function purchasePro(productId) {

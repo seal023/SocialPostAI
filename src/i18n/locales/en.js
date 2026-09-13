@@ -221,7 +221,7 @@ const en = {
   voice_error_desc: 'Speech recognition encountered an error. Please try again.',
   voice_unavailable_title: 'Voice Input Unavailable',
   voice_unavailable_desc: 'Voice input is temporarily unavailable in this build. Please type your topic using the keyboard.',
-  voice_no_api_key: 'API key not configured. Please set EXPO_PUBLIC_BAILIAN_API_KEY.',
+  voice_no_api_key: 'ASR key not configured. Set EXPO_PUBLIC_ASR_API_KEY in .env (must be a Singapore or Beijing region key; US-region keys cannot be used for realtime ASR).',
   voice_no_speech: 'No speech detected. Please try again.',
   voice_connecting: 'Connecting to speech recognition service...',
   voice_ws_error: 'Speech recognition service connection failed. Please check your network and retry.',

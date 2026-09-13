@@ -221,7 +221,7 @@ const zh = {
   voice_error_desc: '语音识别遇到错误，请重试。',
   voice_unavailable_title: '语音输入暂不可用',
   voice_unavailable_desc: '当前版本语音输入功能暂不可用，请使用键盘输入主题。',
-  voice_no_api_key: 'API 密钥未配置，请设置 EXPO_PUBLIC_BAILIAN_API_KEY。',
+  voice_no_api_key: '语音识别密钥未配置。请在 .env 设置 EXPO_PUBLIC_ASR_API_KEY（须为新加坡或北京区域的 Key；美国区 Key 无法用于实时语音）。',
   voice_no_speech: '未检测到语音，请重试。',
   voice_connecting: '正在连接语音识别服务...',
   voice_ws_error: '语音识别服务连接失败，请检查网络后重试。',

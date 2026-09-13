@@ -15,11 +15,21 @@ import { getBuildStamp, BUILD_COMMIT } from '../config/buildInfo';
 import { getIAPDiagnostics, isUsingStub, fetchProducts } from '../services/IAPService';
 
 // Keep in sync with VoiceInput.js config block.
-const BAILIAN_API_KEY = process.env.EXPO_PUBLIC_BAILIAN_API_KEY || '';
+// ASR requires a REGION-MATCHED key (Singapore ap-southeast-1 / Beijing cn-beijing);
+// the US-region text-gen key fails the realtime-ASR handshake with 401.
+const ASR_API_KEY =
+  process.env.EXPO_PUBLIC_ASR_API_KEY ||
+  process.env.EXPO_PUBLIC_BAILIAN_API_KEY ||
+  process.env.EXPO_PUBLIC_DASHSCOPE_API_KEY ||
+  '';
+const ASR_KEY_SOURCE = process.env.EXPO_PUBLIC_ASR_API_KEY
+  ? 'EXPO_PUBLIC_ASR_API_KEY'
+  : 'FALLBACK BAILIAN/DASHSCOPE (US key → realtime ASR 401)';
 const PARAFORMER_WS_URL =
   process.env.EXPO_PUBLIC_PARAFORMER_WS_URL ||
-  'wss://dashscope-realtime.oss-cn-beijing.aliyuncs.com/api-ws/v1/inference';
-const PARAFORMER_MODEL = 'paraformer-realtime';
+  'wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference/';
+const PARAFORMER_MODEL =
+  process.env.EXPO_PUBLIC_PARAFORMER_MODEL || 'fun-asr-realtime';
 
 const WS_PROBE_TIMEOUT = 12000;
 
@@ -41,7 +51,7 @@ function withTimeout(promise, ms) {
 // ── Voice WebSocket connectivity probe (no mic permission needed) ──
 export function runVoiceWsProbe() {
   return new Promise((resolve) => {
-    if (!BAILIAN_API_KEY) {
+    if (!ASR_API_KEY) {
       resolve({ ok: false, reason: 'no-api-key' });
       return;
     }
@@ -54,7 +64,7 @@ export function runVoiceWsProbe() {
     let ws;
     try {
       ws = new WebSocket(PARAFORMER_WS_URL, null, {
-        headers: { 'X-DashScope-ApiKey': BAILIAN_API_KEY },
+        headers: { Authorization: `Bearer ${ASR_API_KEY}` },
       });
     } catch (e) {
       done({ ok: false, reason: `ws-ctor:${e?.message || e}` });
@@ -105,9 +115,15 @@ export function runVoiceWsProbe() {
       }
     };
 
-    ws.onerror = (e) => fail(`error:${e?.message || 'unknown'}`);
+    // React Native's onerror carries no message; prefer the onclose code/reason.
+    ws.onerror = (e) => {
+      setTimeout(() => {
+        if (!settled) fail(`error:${e?.message || 'unknown'}`);
+      }, 1200);
+    };
     ws.onclose = (e) => {
-      if (!settled) fail(`close:${e?.code || '?'}:${e?.reason || ''}`);
+      // 1006 = abnormal closure, typical for a rejected handshake (e.g. 401 auth)
+      if (!settled) fail(`close:${e?.code ?? '?'}:${e?.reason || ''}`);
     };
 
     setTimeout(() => {
@@ -155,7 +171,8 @@ export async function collectDiagnostics() {
   section('诊断 · 语音识别（服务器）');
   report.push({ label: 'ASR 端点', value: PARAFORMER_WS_URL, status: 'info' });
   report.push({ label: '模型', value: PARAFORMER_MODEL, status: 'info' });
-  report.push({ label: 'API Key', value: maskKey(BAILIAN_API_KEY), status: BAILIAN_API_KEY ? 'ok' : 'fail' });
+  report.push({ label: 'Key 来源', value: ASR_KEY_SOURCE, status: process.env.EXPO_PUBLIC_ASR_API_KEY ? 'ok' : 'warn' });
+  report.push({ label: 'API Key', value: maskKey(ASR_API_KEY), status: ASR_API_KEY ? 'ok' : 'fail' });
 
   // Voice WS probe
   const ws = await runVoiceWsProbe();

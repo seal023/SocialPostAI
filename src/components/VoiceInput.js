@@ -1,14 +1,20 @@
 // ============================================================
 // VoiceInput — Real-time speech-to-text with recording overlay
 // Flow: tap mic → half-screen overlay → expo-audio useAudioStream (PCM 16kHz)
-//       → WebSocket paraformer-realtime (DashScope public gateway) → real-time transcript
+//       → WebSocket fun-asr-realtime → real-time transcript
 //
-// NOTE: ASR uses the PUBLIC DashScope real-time ASR gateway
-// (wss://dashscope-realtime.oss-cn-beijing.aliyuncs.com) with the
-// paraformer-realtime model, authenticated via the X-DashScope-ApiKey
-// header using the SAME DashScope key (EXPO_PUBLIC_BAILIAN_API_KEY) that
-// text generation uses. The two services now share one key/endpoint family
-// (the previous private ap-southeast-1 MaaS workspace rejected this key).
+// !! REGION MATTERS !!
+// DashScope realtime ASR (WebSocket wss://.../api-ws/v1/inference) is ONLY
+// served in cn-beijing and ap-southeast-1 (Singapore). API keys are
+// REGION-SPECIFIC — a key from another region fails the WS handshake with 401.
+// The text-generation key in this project is a US (us-east-1) key and CANNOT
+// be used for realtime ASR; a Singapore or Beijing key is required.
+//   • Singapore : wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference/
+//                 (or wss://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/...)
+//   • Beijing   : wss://dashscope.aliyuncs.com/api-ws/v1/inference/
+//                 (or wss://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/...)
+// Auth header: Authorization: Bearer <region_key>  (NOT X-DashScope-ApiKey)
+// Set EXPO_PUBLIC_ASR_API_KEY to the Singapore/Beijing key.
 // ============================================================
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -35,21 +41,29 @@ import { COLORS, SPACING, FONT_SIZE, RADIUS, getTheme } from '../themes/theme';
 import { useLanguage } from '../context/LanguageContext';
 
 // ── Config ──────────────────────────────────────────────────
-// ASR uses the PUBLIC DashScope real-time ASR gateway (Beijing) with paraformer-realtime.
-// Authenticated via X-DashScope-ApiKey header (same DashScope key as text generation).
-const BAILIAN_API_KEY = process.env.EXPO_PUBLIC_BAILIAN_API_KEY || '';
+// ASR needs a REGION-MATCHED key: realtime ASR is only served by
+// cn-beijing / ap-southeast-1, and keys are region-specific.
+const ASR_API_KEY =
+  process.env.EXPO_PUBLIC_ASR_API_KEY ||
+  process.env.EXPO_PUBLIC_BAILIAN_API_KEY ||
+  process.env.EXPO_PUBLIC_DASHSCOPE_API_KEY ||
+  '';
 const PARAFORMER_WS_URL =
   process.env.EXPO_PUBLIC_PARAFORMER_WS_URL ||
-  'wss://dashscope-realtime.oss-cn-beijing.aliyuncs.com/api-ws/v1/inference';
-const PARAFORMER_MODEL = 'paraformer-realtime';
+  'wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference/';
+const PARAFORMER_MODEL =
+  process.env.EXPO_PUBLIC_PARAFORMER_MODEL || 'fun-asr-realtime';
 
 // Startup diagnostics — verify ASR endpoint + model are wired correctly
 console.log('[VoiceInput] ASR config:');
 console.log('  WS URL  :', PARAFORMER_WS_URL);
 console.log('  Model   :', PARAFORMER_MODEL);
-console.log('  API Key :', BAILIAN_API_KEY
-  ? `${BAILIAN_API_KEY.slice(0, 8)}...${BAILIAN_API_KEY.slice(-4)} (len=${BAILIAN_API_KEY.length})`
-  : '(EMPTY — check EXPO_PUBLIC_BAILIAN_API_KEY)');
+console.log('  Key src :', process.env.EXPO_PUBLIC_ASR_API_KEY
+  ? 'EXPO_PUBLIC_ASR_API_KEY'
+  : 'FALLBACK (BAILIAN/DASHSCOPE — US-region key, realtime ASR will 401!)');
+console.log('  API Key :', ASR_API_KEY
+  ? `${ASR_API_KEY.slice(0, 8)}...${ASR_API_KEY.slice(-4)} (len=${ASR_API_KEY.length})`
+  : '(EMPTY — set EXPO_PUBLIC_ASR_API_KEY to a Singapore/Beijing key)');
 
 const AUDIO_CONFIG = {
   sampleRate: 16000,
@@ -147,7 +161,7 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
 
   // ── WebSocket connect + run-task ──────────────────────────
   const connectAndStartTask = useCallback(async () => {
-    if (!BAILIAN_API_KEY) {
+    if (!ASR_API_KEY) {
       Alert.alert(t('voice_error'), t('voice_no_api_key'));
       return false;
     }
@@ -158,7 +172,7 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
       taskStartedResolveRef.current = resolve;
 
       const ws = new WebSocket(PARAFORMER_WS_URL, null, {
-        headers: { 'X-DashScope-ApiKey': BAILIAN_API_KEY },
+        headers: { Authorization: `Bearer ${ASR_API_KEY}` },
       });
 
       ws.onopen = () => {
@@ -179,8 +193,13 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
               parameters: {
                 format: 'pcm',
                 sample_rate: AUDIO_CONFIG.sampleRate,
-                // Auto language detection — Paraformer supports zh/en code-switching
+                // Fun-ASR: auto language detection (zh/en code-switching) + punctuation
                 language_hints: ['zh', 'en'],
+                punctuation_prediction_enabled: true,
+                inverse_text_normalization_enabled: true,
+                // heartbeat prevents the server from closing an idle connection
+                heartbeat: true,
+                max_sentence_silence: 800,
               },
             },
           })
@@ -360,7 +379,7 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
       }
 
       // 2. Check API key
-      if (!BAILIAN_API_KEY) {
+      if (!ASR_API_KEY) {
         Alert.alert(t('voice_error'), t('voice_no_api_key'));
         return;
       }

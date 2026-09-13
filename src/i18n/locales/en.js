@@ -392,6 +392,8 @@ const en = {
   dev_reset_today: 'Reset today\'s free count',
   dev_reset_trial: 'Restore 7-day trial',
   dev_reset_done: 'Reset complete — you can start testing now.',
+  diag_open: 'Diagnostics',
+  diag_title: '🩺 Diagnostics',
 };
 
 export default en;

@@ -83,6 +83,8 @@ const KEYS = {
 let purchaseUpdateListener = null;
 let purchaseErrorListener = null;
 let isInitialized = false;
+let lastFetchAttemptIds = [];
+let lastFetchedProductIds = [];
 
 // External callback — set by subscription.js to handle Pro unlock
 let onPurchaseSuccessCallback = null;
@@ -204,8 +206,10 @@ export async function fetchProducts() {
   loadRNIapModule();
   if (!RNIap) return [];
   try {
+    lastFetchAttemptIds = [...ALL_PRODUCT_IDS];
     console.log('[IAP] Fetching products:', ALL_PRODUCT_IDS);
     const products = await RNIap.getSubscriptions({ skus: ALL_PRODUCT_IDS });
+    lastFetchedProductIds = (products || []).map((p) => p.productId);
     console.log('[IAP] Products loaded:', products.length);
 
     // Normalize product data for UI
@@ -789,4 +793,21 @@ export function isIAPAvailable() {
  */
 export function isUsingStub() {
   return IS_RNIAP_STUB;
+}
+
+/**
+ * Snapshot of IAP product-ID state for diagnostics.
+ * Consumed by subscription.purchasePro() and surfaced in localized
+ * purchase-failure messages so the user can tell whether the problem is
+ * a code mismatch, a missing "Cleared for Sale" flag, or an unconfigured
+ * paid-applications agreement.
+ */
+export function getIAPDiagnostics() {
+  return {
+    registeredIds: [...ALL_PRODUCT_IDS],
+    attemptedIds: [...lastFetchAttemptIds],
+    fetchedIds: [...lastFetchedProductIds],
+    isStub: IS_RNIAP_STUB,
+    isInitialized,
+  };
 }

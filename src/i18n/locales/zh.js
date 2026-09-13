@@ -392,6 +392,8 @@ const zh = {
   dev_reset_today: '重置今日免费次数',
   dev_reset_trial: '恢复 7 天试用',
   dev_reset_done: '已重置，可以开始测试了。',
+  diag_open: '诊断自检',
+  diag_title: '🩺 诊断自检',
 };
 
 export default zh;

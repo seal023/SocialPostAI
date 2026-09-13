@@ -42,6 +42,7 @@ import { signInWithApple, signOutApple, getAppleAuthState, isAppleAuthAvailable 
 import { getPermissions } from '../utils/permissions';
 import BrandVoiceScreen from './BrandVoiceScreen';
 import ResultDrawer from '../components/ResultDrawer';
+import DiagnosticsPanel from '../components/DiagnosticsPanel';
 import { BackgroundDecorator, CornerBrackets, getCardStyle, getStatusBarStyle } from '../components/StyleDecorator';
 
 // Privacy & Terms URLs
@@ -124,6 +125,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
   const [usernameInput, setUsernameInput] = useState('');
   const [appleUser, setAppleUser] = useState(null);
   const [permissions, setPermissions] = useState(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   // Check Apple ID login status and permissions on mount
   useEffect(() => {
@@ -827,9 +829,16 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
           />
           <SettingRow
             item={{ id: 'rate', icon: '⭐', titleKey: 'rate_app' }}
-            isLast={true}
+            isLast={false}
             theme={theme}
             onPress={() => Alert.alert(t('rate_thanks'), t('rate_desc'))}
+            t={t}
+          />
+          <SettingRow
+            item={{ id: 'diag', icon: '🩺', titleKey: 'diag_open' }}
+            isLast={true}
+            theme={theme}
+            onPress={() => setShowDiagnostics(true)}
             t={t}
           />
         </View>
@@ -1079,6 +1088,13 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
           </View>
         </View>
       </Modal>
+
+      {/* ===== Diagnostics Panel ===== */}
+      <DiagnosticsPanel
+        visible={showDiagnostics}
+        onClose={() => setShowDiagnostics(false)}
+        themeName={themeName}
+      />
 
       {/* ===== Theme Style Picker Modal ===== */}
       <Modal

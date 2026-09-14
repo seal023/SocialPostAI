@@ -225,6 +225,9 @@ const zh = {
 
   // Subscription
   upgrade_to_pro: '升级到 Pro',
+  subscription_active: '已订阅 · Pro 会员',
+  paywall_free_trial_then: '免费试用 7 天，之后 {price}',
+  paywall_annual_avg: '均摊 {price}/月',
   coming_soon: '即将上线',
   voice_input_desc: '语音输入功能即将上线！',
   voice_input: '语音输入',

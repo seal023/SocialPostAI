@@ -28,6 +28,7 @@ import {
   ASR_MODEL as PARAFORMER_MODEL,
   buildRunTaskPayload,
 } from '../config/asrConfig';
+import { getSubscriptionStatus } from '../utils/storage';
 
 const WS_PROBE_TIMEOUT = 12000;
 
@@ -250,6 +251,15 @@ export async function collectDiagnostics() {
         + (le.reason ? ` · ${le.reason}` : '')
       : '尚未运行（启动/购买/恢复时触发）',
     status: le ? (le.ok ? 'ok' : 'info') : 'info',
+  });
+  // The flag the UI actually gates on. Reported separately from the StoreKit
+  // probe above so a "StoreKit says you own it, but the app still shows
+  // 升级到 Pro" mismatch is visible in one screenshot instead of guessed at.
+  const localStatus = await getSubscriptionStatus().catch(() => 'unknown');
+  report.push({
+    label: '本地订阅状态',
+    value: `${localStatus}（AsyncStorage · 决定 Pro 徽章/解锁）`,
+    status: localStatus === 'pro' ? 'ok' : 'info',
   });
 
   // Voice

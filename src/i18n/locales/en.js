@@ -225,6 +225,9 @@ const en = {
 
   // Subscription
   upgrade_to_pro: 'Upgrade to Pro',
+  subscription_active: 'Subscribed · Pro',
+  paywall_free_trial_then: 'Start 7-day free trial, then {price}',
+  paywall_annual_avg: '{price}/mo avg',
   coming_soon: 'Coming Soon',
   voice_input_desc: 'Voice input feature is coming soon!',
   voice_input: 'Voice Input',

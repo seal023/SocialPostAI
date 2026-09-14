@@ -36,6 +36,7 @@ import {
   resetDailyUsage,
   resetTrialForTesting,
   subscribeSubscription,
+  syncProEntitlement,
   PRODUCT_IDS,
 } from '../utils/subscription';
 import { baseProductId, isUserCancelled } from '../services/IAPService';
@@ -60,6 +61,31 @@ const APP_STORE_URL = 'https://apps.apple.com/app/id6801996062';
 const APP_STORE_REVIEW_URL = 'https://apps.apple.com/app/id6801996062?action=write-review';
 
 // Pricing tiers — will be loaded dynamically from StoreKit via IAP
+// Format an amount in the currency/format of a StoreKit localized price:
+//   ('¥328.00', 27.3333) → '¥27.33'      ('US$49.99', 4.1666) → 'US$4.17'
+//   ('49,99 €', 4.1666)  → '4.17 €'
+//
+// The paywall's price-DERIVED notes (annual monthly-average, "then ¥xx/yr")
+// must be quoted in the same currency Apple actually charges. App Store review
+// compares the displayed price with the real one, and a hardcoded USD string on
+// a ¥-priced product both misleads users and risks rejection.
+function formatLocalizedAmount(localizedPrice, amount) {
+  if (typeof localizedPrice !== 'string' || !localizedPrice.trim()) return null;
+  if (typeof amount !== 'number' || !isFinite(amount)) return null;
+
+  const trimmed = localizedPrice.trim();
+  const numeric = trimmed.replace(/[^\d.,]/g, '');
+  // Mirror StoreKit's own precision: ¥328.00 → 2 decimals, ¥328 → 0.
+  const decimals = /[.,]\d{2}$/.test(numeric) ? 2 : 0;
+  // Everything that is not a digit/separator/space is the currency marker.
+  const symbol = trimmed.replace(/[\d.,\s]/g, '');
+  const value = amount.toFixed(decimals);
+
+  if (!symbol) return value;
+  // Keep the marker on whichever side StoreKit put it.
+  return /^\d/.test(trimmed) ? `${value} ${symbol}` : `${symbol}${value}`;
+}
+
 // Fallback values used until products are fetched
 // ⚠️  Product IDs must EXACTLY match App Store Connect configuration.
 //     Current (per Apple review): com.seal023.socialpostai.monthly / com.seal023.socialpostai.annual
@@ -168,8 +194,15 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
   // update our local state, close the paywall, and greet the user — without
   // relying on the fragile 2-second setTimeout poll in handlePurchase.
   useEffect(() => {
-    const unsub = subscribeSubscription((state) => {
+    const unsub = subscribeSubscription(async (state) => {
       setSubscriptionState(state);
+      // Recompute the derived permissions too. They drive the 👑 Pro badge and
+      // the avatar/username editing row; without this the unlock lands in
+      // storage but the badge stays hidden until the app is restarted.
+      try {
+        const perms = await getPermissions();
+        setPermissions(perms);
+      } catch (e) {}
       if (state.status === 'pro') {
         setShowSubscription(false); // auto-close paywall on success
         if (!proWelcomeShownRef.current) {
@@ -197,17 +230,29 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
       const bvSamples = await getBrandVoiceSamples();
       setBrandVoiceCount(bvSamples.length);
     } catch (e) {}
-    try {
-      const subState = await getSubscriptionState();
-      setSubscriptionState(subState);
-    } catch (e) {}
     // Re-reconcile Pro status with what StoreKit says the user actually owns,
     // every time the Profile tab (and thus the paywall) becomes focused. This
     // fixes "已购买却仍显示升级到 Pro": a purchase made elsewhere / a restored
     // subscription is reflected immediately, without waiting for a crash-prone
     // startup check.
+    //
+    // Order matters: this call can itself write 'pro' to storage, so the reads
+    // below must happen AFTER it, never before.
     try {
       await syncProEntitlement('paywall-focus');
+    } catch (e) {}
+    try {
+      const subState = await getSubscriptionState();
+      setSubscriptionState(subState);
+    } catch (e) {}
+    // Permissions are DERIVED from the stored subscription status (they gate
+    // the 👑 Pro badge next to the avatar, profile editing, etc.). They used to
+    // be loaded once on mount only, so after a purchase the Pro badge never
+    // appeared and the avatar row went blank — the subscription state and its
+    // derived permissions must always be read as a pair.
+    try {
+      const perms = await getPermissions();
+      setPermissions(perms);
     } catch (e) {}
     try {
       const profile = await loadUserProfile();
@@ -234,17 +279,48 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
             const product =
               products.find((p) => p.productId === tier.productId) ||
               products.find((p) => baseProductId(p.productId) === tier.productId);
-            if (product) {
-              return {
-                ...tier,
-                price: product.localizedPrice || product.price,
-                priceValue: product.priceValue,
-                description: product.description,
-                isLoading: false,
-                isFallback: product.isFallback || false,
-              };
+            if (!product) return { ...tier, isLoading: false };
+
+            const realPrice = product.localizedPrice || product.price;
+            const parsedValue = parseFloat(String(realPrice || '').replace(/[^\d.]/g, ''));
+            const realValue =
+              typeof product.priceValue === 'number' && isFinite(product.priceValue)
+                ? product.priceValue
+                : (isFinite(parsedValue) ? parsedValue : tier.priceValue);
+            const isFallback = product.isFallback === true;
+
+            const next = {
+              ...tier,
+              price: realPrice || tier.price,
+              priceValue: realValue,
+              description: product.description,
+              isLoading: false,
+              isFallback,
+            };
+
+            // Rebuild the price-DERIVED notes from the real localized price.
+            // These used to be hardcoded USD ("$4.17/mo avg", "then $5.99/mo"),
+            // so the paywall quoted dollars while Apple charged ¥328/yr — a
+            // mismatch App Store review flags and users read as misleading.
+            // When StoreKit could not be reached (fallback list) we show NO
+            // derived amount at all rather than a fabricated currency.
+            if (!isFallback && realPrice) {
+              if (tier.id === 'monthly' || tier.id === 'annual') {
+                next.introNote = t('paywall_free_trial_then', {
+                  price: `${realPrice}${tier.period}`,
+                });
+              }
+              if (tier.id === 'annual') {
+                const perMonth = formatLocalizedAmount(realPrice, realValue / 12);
+                next.subNote = perMonth ? t('paywall_annual_avg', { price: perMonth }) : null;
+              }
+            } else {
+              // StoreKit unreachable → the tier still carries its hardcoded USD
+              // placeholder. Show no derived amount rather than a fabricated one.
+              next.introNote = null;
+              next.subNote = null;
             }
-            return { ...tier, isLoading: false };
+            return next;
           });
           setIapProducts(products);
         }
@@ -355,11 +431,22 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
         return;
       }
 
-      // Purchase request sent — StoreKit shows the system sheet. The actual
-      // unlock happens in the IAPService purchaseUpdatedListener → subscription
-      // success callback, which now pushes the new state to us via
-      // subscribeSubscription (closes the paywall + shows the welcome alert).
-      // No setTimeout poll needed; the event drives the UI.
+      // StoreKit resolved the purchase promise → the transaction completed on
+      // Apple's side. The listener path (purchaseUpdatedListener → subscription
+      // success callback) normally unlocks Pro and pushes the new state through
+      // subscribeSubscription. Reconcile here as well, so the unlock is
+      // guaranteed even if that event is missed or lands late (e.g. the
+      // listener was attached after the transaction was delivered).
+      try {
+        const found = await syncProEntitlement('post-purchase');
+        if (found) {
+          const subState = await getSubscriptionState();
+          setSubscriptionState(subState);
+          const perms = await getPermissions();
+          setPermissions(perms);
+          setShowSubscription(false);
+        }
+      } catch (e) {}
     } catch (error) {
       console.error('[ProfileScreen] Purchase error:', error);
       Alert.alert(t('purchase_failed_title'), t('purchase_failed_desc'));
@@ -763,7 +850,9 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
             </Text>
             <View style={styles.favRight}>
               <Text style={[styles.favCount, { color: theme.primary }]}>
-                {t('upgrade_to_pro')}
+                {subscriptionState.status === 'pro'
+                  ? t('subscription_active')
+                  : t('upgrade_to_pro')}
               </Text>
               <Text style={[styles.arrow, { color: theme.placeholder }]}>›</Text>
             </View>

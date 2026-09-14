@@ -226,6 +226,8 @@ const zh = {
   // Subscription
   upgrade_to_pro: '升级到 Pro',
   subscription_active: '已订阅 · Pro 会员',
+  already_subscribed_title: '你已订阅 Pro',
+  already_subscribed_desc: '你的 Pro 会员已生效，无需重复购买。如需管理或取消订阅，请前往「设置 → Apple ID → 订阅」。',
   paywall_free_trial_then: '免费试用 7 天，之后 {price}',
   paywall_annual_avg: '均摊 {price}/月',
   coming_soon: '即将上线',

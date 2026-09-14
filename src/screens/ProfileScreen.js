@@ -413,6 +413,31 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
     if (isPurchasing) return;
 
     console.log('[ProfileScreen] handlePurchase clicked, tier:', tier?.id, 'productId:', tier?.productId);
+
+    // Already subscribed? NEVER start a purchase. StoreKit has nothing to sell
+    // for an item you already own, so on an owned subscription the purchase can
+    // resolve WITHOUT ever presenting the payment sheet — which then surfaced as
+    // a bogus "购买成功 / 欢迎升级 Pro" alert with no sheet in sight. Reconcile
+    // first (state can be stale), and if Pro is already owned, say so and stop.
+    let ownsPro = subscriptionState.status === 'pro';
+    if (!ownsPro) {
+      try {
+        const found = await syncProEntitlement('pre-purchase');
+        if (found) {
+          const subState = await getSubscriptionState();
+          setSubscriptionState(subState);
+          const perms = await getPermissions();
+          setPermissions(perms);
+          ownsPro = subState.status === 'pro';
+        }
+      } catch (e) {}
+    }
+    if (ownsPro) {
+      setShowSubscription(false);
+      Alert.alert(t('already_subscribed_title'), t('already_subscribed_desc'));
+      return;
+    }
+
     setIsPurchasing(true);
     try {
       console.log('[ProfileScreen] Calling purchasePro...');
@@ -857,7 +882,16 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
         <TouchableOpacity
           style={[styles.sectionCard, { backgroundColor: theme.card }]}
           activeOpacity={0.7}
-          onPress={() => setShowSubscription(true)}
+          onPress={() => {
+            // Don't open the paywall for an existing subscriber — it would offer
+            // "升级到 Pro" to someone who already owns Pro and lead to a phantom
+            // purchase. Tell them they're already subscribed instead.
+            if (subscriptionState.status === 'pro') {
+              Alert.alert(t('already_subscribed_title'), t('already_subscribed_desc'));
+            } else {
+              setShowSubscription(true);
+            }
+          }}
         >
           <View style={styles.favRow}>
             <Text style={[styles.sectionTitle, { color: theme.title, marginBottom: 0 }]}>

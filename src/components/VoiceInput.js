@@ -264,20 +264,21 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
         resolve(finalTextRef.current);
       }, 5000);
 
+      // IMPORTANT: do NOT call handleMessage() here. `originalOnMessage` IS the
+      // socket's normal handler and already runs handleMessage() for every frame
+      // it forwards to (see the `if (originalOnMessage) originalOnMessage(event)`
+      // below). Calling it in both places processed each `result-generated`
+      // sentence twice, and because finalTextRef accumulates with `+=`, a single
+      // spoken phrase ended up duplicated in the input box (1 phrase → 2 copies).
       const originalOnMessage = ws.onmessage;
       ws.onmessage = (event) => {
         if (typeof event.data === 'string') {
           try {
             const message = JSON.parse(event.data);
-            handleMessage(message);
-
-            if (message.header?.event === 'task-finished') {
-              clearTimeout(timeoutId);
-              ws.onmessage = originalOnMessage;
-              resolve(finalTextRef.current);
-              return;
-            }
-            if (message.header?.event === 'task-failed') {
+            if (
+              message.header?.event === 'task-finished' ||
+              message.header?.event === 'task-failed'
+            ) {
               clearTimeout(timeoutId);
               ws.onmessage = originalOnMessage;
               resolve(finalTextRef.current);

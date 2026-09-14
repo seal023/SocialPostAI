@@ -352,6 +352,9 @@ const en = {
   subscribe_btn_loading: 'Processing...',
   restore_purchases: 'Restore Purchases',
   restore_purchases_loading: 'Restoring...',
+  manage_subscription: 'Manage Subscription',
+  manage_subscription_failed_title: 'Unable to open subscription management',
+  manage_subscription_failed_desc: 'Please try again later. You can also manage it manually in Settings → Apple ID → Subscriptions.',
   pro_unlocked_title: 'Pro Unlocked',
   pro_unlocked_desc: 'Thank you for subscribing! All Pro features are now active.',
 

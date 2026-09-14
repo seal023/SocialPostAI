@@ -32,6 +32,7 @@ import {
   getLastEntitlementResult,
   getStoreKitMode,
   isUserCancelled,
+  manageSubscriptions,
 } from '../services/IAPService';
 
 // Re-exported so screens can branch on "the user dismissed Apple's sheet"
@@ -39,6 +40,11 @@ import {
 // E_USER_CANCELLED spelling (the one-L typo that caused a false
 // "购买失败 PRODUCT_NOT_FOUND" alert on a plain cancel).
 export { isUserCancelled };
+
+// Re-exported so the Profile screen can open Apple's in-app subscription
+// management sheet (the only way to cancel a TestFlight/"production sandbox"
+// subscription) without importing the service module directly.
+export { manageSubscriptions };
 
 // ---- Constants ----
 

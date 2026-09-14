@@ -4,7 +4,7 @@
 // validation for auto-renewable subscriptions.
 // ============================================================
 
-import { Platform } from 'react-native';
+import { Platform, NativeModules } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ============================================================
@@ -1364,4 +1364,54 @@ export function getIAPDiagnostics() {
  */
 export function getStoreKitMode() {
   return { mode: IAP_STOREKIT_MODE, setupError: IAP_SETUP_ERROR };
+}
+
+/**
+ * Open Apple's IN-APP "Manage Subscriptions" sheet.
+ *
+ * WHY THIS EXISTS
+ * A subscription bought from a TestFlight build under a REAL Apple ID lives in
+ * the "production sandbox": it does NOT appear under Settings → Subscriptions,
+ * it cannot be cleared from App Store Connect (no sandbox tester to clear), and
+ * it auto-renews every 24h (≤6 renewals, then it self-cancels). Apple's own
+ * engineers confirm the ONLY in-app way to cancel/manage such a subscription is
+ * to present `AppStore.showManageSubscriptions(in:)` from inside the app:
+ *   https://developer.apple.com/forums/thread/802551
+ *
+ * HOW WE CALL IT
+ * react-native-iap v12 wraps that native method as
+ * `RNIapIosSk2.showManageSubscriptions()` (ios/RNIapIosSk2.swift →
+ * AppStore.showManageSubscriptions(in:)), but does NOT re-export it from the
+ * package root (`src/modules/index.ts` only re-exports `./ios`). So we reach
+ * the native module directly. If StoreKit 2 isn't the active module we fall
+ * back to react-native-iap's `deepLinkToSubscriptions()`, which merely opens
+ * https://apps.apple.com/account/subscriptions for the user.
+ *
+ * @returns {Promise<{success: boolean, via?: string, error?: string, message?: string}>}
+ */
+export async function manageSubscriptions() {
+  if (Platform.OS !== 'ios') {
+    return { success: false, error: 'UNSUPPORTED_PLATFORM' };
+  }
+  try {
+    const sk2 = NativeModules.RNIapIosSk2;
+    if (sk2 && typeof sk2.showManageSubscriptions === 'function') {
+      await sk2.showManageSubscriptions();
+      return { success: true, via: 'sk2-sheet' };
+    }
+    // StoreKit 1 active / Sk2 module not linked — open the App Store page.
+    loadRNIapModule();
+    if (RNIap && typeof RNIap.deepLinkToSubscriptions === 'function') {
+      await RNIap.deepLinkToSubscriptions({});
+      return { success: true, via: 'deeplink' };
+    }
+    return { success: false, error: 'MANAGE_SUBS_UNAVAILABLE' };
+  } catch (e) {
+    console.warn('[IAP] manageSubscriptions failed:', e?.message || e);
+    return {
+      success: false,
+      error: e?.code || 'MANAGE_SUBS_FAILED',
+      message: e?.message,
+    };
+  }
 }

@@ -37,6 +37,7 @@ import {
   resetTrialForTesting,
   subscribeSubscription,
   syncProEntitlement,
+  manageSubscriptions,
   PRODUCT_IDS,
 } from '../utils/subscription';
 import { baseProductId, isUserCancelled } from '../services/IAPService';
@@ -507,6 +508,30 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
   };
 
   // ---- Restore purchases ----
+  // Opens Apple's IN-APP subscription management sheet. This is the only way to
+  // view/cancel a subscription bought from TestFlight under a real Apple ID
+  // ("production sandbox"): such a subscription is invisible in
+  // Settings → Subscriptions and cannot be cleared from App Store Connect.
+  const handleManageSubscription = async () => {
+    console.log('[ProfileScreen] handleManageSubscription clicked');
+    try {
+      const result = await manageSubscriptions();
+      if (!result?.success) {
+        console.warn('[ProfileScreen] manageSubscriptions result:', result);
+        Alert.alert(
+          t('manage_subscription_failed_title'),
+          t('manage_subscription_failed_desc'),
+        );
+      }
+    } catch (e) {
+      console.warn('[ProfileScreen] manageSubscriptions threw:', e?.message || e);
+      Alert.alert(
+        t('manage_subscription_failed_title'),
+        t('manage_subscription_failed_desc'),
+      );
+    }
+  };
+
   const handleRestorePurchase = async () => {
     if (isRestoring) return;
 
@@ -1266,6 +1291,20 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
                   {t('restore_purchases')}
                 </Text>
               )}
+            </TouchableOpacity>
+
+            {/* Manage subscription — opens Apple's in-app management sheet.
+                Always visible: a "production sandbox" (TestFlight) subscription
+                can't be managed from Settings, and the local status may wrongly
+                read trial/free while the Apple ID still owns a subscription. */}
+            <TouchableOpacity
+              onPress={handleManageSubscription}
+              activeOpacity={0.7}
+              style={styles.restoreRow}
+            >
+              <Text style={[styles.restoreText, { color: theme.placeholder }]}>
+                {t('manage_subscription')}
+              </Text>
             </TouchableOpacity>
 
             {/* Cancel button - always visible */}

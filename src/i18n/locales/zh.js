@@ -352,6 +352,9 @@ const zh = {
   subscribe_btn_loading: '处理中...',
   restore_purchases: '恢复购买',
   restore_purchases_loading: '恢复中...',
+  manage_subscription: '管理订阅',
+  manage_subscription_failed_title: '无法打开订阅管理',
+  manage_subscription_failed_desc: '请稍后重试。你也可以前往「设置 → Apple ID → 订阅」手动管理。',
   pro_unlocked_title: 'Pro 已解锁',
   pro_unlocked_desc: '感谢订阅！所有 Pro 功能已激活。',
 

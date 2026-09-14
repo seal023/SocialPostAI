@@ -6,10 +6,10 @@
 // than the latest commit, the installed build is stale (TestFlight
 // did not pick up the new build).
 // ============================================================
-export const BUILD_STAMP = 'ascAppId→6801996062 + dev-tools __DEV__ gate · 2026-09-14 · iap-sk2 + no-owned-repurchase + voice-dedup + paywall-readable';
+export const BUILD_STAMP = 'ascAppId→6801996062 + dev-tools __DEV__ gate · 2026-09-14 · iap-sk2 + no-owned-repurchase + voice-dedup + paywall-readable + manage-subs';
 
 // Git commit / branch this build was cut from (informational)
-export const BUILD_COMMIT = 'main@iap-v2-fix+noownedrepurchase+voicededup+paywallreadable';
+export const BUILD_COMMIT = 'main@iap-v2-fix+noownedrepurchase+voicededup+paywallreadable+managesubs';
 
 // QA-only tools (e.g. the quota-reset entry + the 诊断自检 panel in Profile).
 // These must be HIDDEN in the production App Store build.

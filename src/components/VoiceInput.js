@@ -106,10 +106,16 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
   const taskIdRef = useRef(null);
   const finalTextRef = useRef('');
   const taskStartedResolveRef = useRef(null);
+  // Whether the server ever sent `task-started` for the current session.
+  // Surfaced in the failure detail so a screenshot tells us if the socket died
+  // before the task began (audio-session reset) or after (audio-stream issue).
+  const taskStartedRef = useRef(false);
   // Human-readable reason for the last failure (close code / task-failed code).
   // Surfaced in the alert so a device screenshot pinpoints the cause instead of
   // showing a generic "network error".
   const lastFailRef = useRef(null);
+  // Guards against firing two stacked error alerts for one failure.
+  const alertShownRef = useRef(false);
 
   // ── Audio stream hook ─────────────────────────────────────
   const handleAudioBuffer = useCallback((buffer) => {
@@ -132,6 +138,7 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
     switch (header?.event) {
       case 'task-started':
         console.log('[VoiceInput] Task started, ready to stream audio');
+        taskStartedRef.current = true;
         taskStartedResolveRef.current?.(true);
         taskStartedResolveRef.current = null;
         break;
@@ -161,16 +168,25 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
         lastFailRef.current = `task-failed ${code}`.trim();
         taskStartedResolveRef.current?.(null);
         taskStartedResolveRef.current = null;
-        Alert.alert(
-          t('voice_error'),
+        showVoiceError(
+          'voice_error',
           `${code ? `[${code}] ` : ''}${msg || t('voice_error_desc')}`
         );
         break;
       }
 
-      default:
-        break;
+    default:
+      break;
     }
+  }, [t]);
+
+  // ── Deduped error reporter ────────────────────────────────
+  // Several failure paths can fire for one session (task-failed + close, or
+  // close + openOverlay fallback). This ensures only ONE alert is shown.
+  const showVoiceError = useCallback((titleKey, detail) => {
+    if (alertShownRef.current) return;
+    alertShownRef.current = true;
+    Alert.alert(t(titleKey), detail);
   }, [t]);
 
   // ── WebSocket connect + run-task ──────────────────────────
@@ -219,11 +235,13 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
       };
 
       ws.onclose = (event) => {
-        console.log('[VoiceInput] WebSocket closed:', event.code, event.reason);
+        console.log('[VoiceInput] WebSocket closed:', event.code, event.reason, 'taskStarted=', taskStartedRef.current);
         setIsConnecting(false);
         if (taskStartedResolveRef.current) {
-          // 1006 = abnormal closure, typical for a rejected handshake (e.g. 401)
-          lastFailRef.current = `close ${event.code ?? '?'}${event.reason ? ` (${event.reason})` : ''}`;
+          // 1006 = abnormal closure, typical for a rejected handshake (e.g. 401).
+          // Recording whether task-started arrived tells us if the socket died
+          // before the task began (audio-session reset at stream.start) or after.
+          lastFailRef.current = `close ${event.code ?? '?'}${event.reason ? ` (${event.reason})` : ''}${taskStartedRef.current ? '' : ' BEFORE task-started'}`;
           taskStartedResolveRef.current(null);
           taskStartedResolveRef.current = null;
         }
@@ -383,18 +401,26 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
       setFinalText('');
       finalTextRef.current = '';
 
-      // 5. Show overlay
+      // 5. Show overlay + reset per-session diagnostic flags
       setOverlayVisible(true);
       setIsConnecting(true);
+      alertShownRef.current = false;
+      taskStartedRef.current = false;
+      lastFailRef.current = null;
 
-      // 6. Connect WebSocket + start task
+      // 6. Connect WebSocket + start task.
+      //    ORDER IS INTENTIONAL — leave as WS-first. This is the order that
+      //    works on device today. A stream-first variant was tried on 2026-09-13
+      //    to chase a `close 0 BEFORE task-started`, but that failure stopped
+      //    reproducing, so the known-good order stays. Do not flip this without
+      //    a fresh, repeatable reproduction.
       const started = await connectAndStartTask();
       if (!started) {
         setIsConnecting(false);
         setOverlayVisible(false);
         const detail = lastFailRef.current;
-        Alert.alert(
-          t('voice_error'),
+        showVoiceError(
+          'voice_error',
           detail ? `${t('voice_ws_error')}\n\n[${detail}]` : t('voice_ws_error')
         );
         return;
@@ -415,14 +441,14 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
           // Provide a specific, user-facing error message
           const errMsg = streamErr?.message || String(streamErr);
           if (errMsg.includes('permission') || errMsg.includes('Permission')) {
-            Alert.alert(t('voice_permission_denied'), t('voice_permission_desc'));
+            showVoiceError(t('voice_permission_denied'), t('voice_permission_desc'));
           } else if (errMsg.includes('busy') || errMsg.includes('occupied')) {
-            Alert.alert(
+            showVoiceError(
               t('voice_error'),
               t('voice_mic_busy') || '麦克风被其他应用占用，请关闭后重试。'
             );
           } else {
-            Alert.alert(
+            showVoiceError(
               t('voice_unavailable_title') || 'Voice Input Unavailable',
               t('voice_stream_error') || '当前版本语音输入功能暂不可用，请使用键盘输入主题。'
             );
@@ -430,6 +456,7 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
           return;
         }
       }
+
       setIsListening(true);
       setIsConnecting(false);
     } catch (error) {

@@ -61,14 +61,54 @@ function loadRNIapModule() {
 }
 
 // ---- Product IDs (must match App Store Connect / Google Play) ----
-// ✅ Matches ASC config: com.seal023.socialpostai.monthly / com.seal023.socialpostai.annual
+// The ASC console historically uses the `.v2`-suffixed product IDs (see the
+// old repo commit 8d18745 "IAPService.js: 订阅 productId 更新为.v2 匹配 ASC").
+// react-native-iap's getSubscriptions() filters returned items by
+// `skus.includes(productId)`, so if ASC only exposes the .v2 IDs while we ask
+// for the plain IDs, every product is silently dropped → 0 products → NO_PRODUCTS.
+// Requesting BOTH plain and .v2 variants makes the screen work regardless of
+// which form ASC actually uses. resolveProductId() then maps a canonical
+// (base) ID to the real SKU StoreKit returned before calling purchaseSubscription.
 
 export const PRODUCT_IDS = {
   MONTHLY: 'com.seal023.socialpostai.monthly',
   ANNUAL: 'com.seal023.socialpostai.annual',
+  MONTHLY_V2: 'com.seal023.socialpostai.monthly.v2',
+  ANNUAL_V2: 'com.seal023.socialpostai.annual.v2',
 };
 
-const ALL_PRODUCT_IDS = [PRODUCT_IDS.MONTHLY, PRODUCT_IDS.ANNUAL];
+const ALL_PRODUCT_IDS = [
+  PRODUCT_IDS.MONTHLY,
+  PRODUCT_IDS.ANNUAL,
+  PRODUCT_IDS.MONTHLY_V2,
+  PRODUCT_IDS.ANNUAL_V2,
+];
+
+// Strip a trailing ".v2" so the UI/price mapping treats
+// com.seal023.socialpostai.monthly and ...monthly.v2 as the same slot.
+export function baseProductId(id) {
+  return (id || '').replace(/\.v2$/, '');
+}
+
+export function isMonthlyProduct(id) {
+  return baseProductId(id) === PRODUCT_IDS.MONTHLY;
+}
+
+export function isAnnualProduct(id) {
+  return baseProductId(id) === PRODUCT_IDS.ANNUAL;
+}
+
+// Given a canonical (base) productId, return the ACTUAL sku StoreKit returned.
+// Prefers an exact match, then the .v2 variant (when ASC only exposes those),
+// so purchaseSubscription is always called with an ID that exists.
+export function resolveProductId(canonicalId) {
+  if (!canonicalId) return canonicalId;
+  const fetched = lastFetchedProductIds || [];
+  if (fetched.includes(canonicalId)) return canonicalId;
+  const v2 = `${canonicalId}.v2`;
+  if (fetched.includes(v2)) return v2;
+  return canonicalId;
+}
 
 // ---- AsyncStorage keys for receipt caching ----
 
@@ -245,7 +285,13 @@ export async function fetchProducts() {
  */
 export async function fetchProduct(productId) {
   const products = await fetchProducts();
-  return products.find((p) => p.productId === productId) || null;
+  // Tolerate the `.v2` form: callers pass the canonical ID, StoreKit may return
+  // the `.v2` SKU (or vice versa).
+  return (
+    products.find((p) => p.productId === productId) ||
+    products.find((p) => baseProductId(p.productId) === baseProductId(productId)) ||
+    null
+  );
 }
 
 // ============================================================
@@ -314,8 +360,13 @@ export async function purchaseSubscription(productId) {
       );
     }
 
-    // 3) Verify the requested productId was actually returned
-    const matched = products.find(p => p.productId === productId);
+    // 3) Verify the requested productId was actually returned.
+    //    Match exactly first, then fall back to a `.v2`-normalized match so a
+    //    caller passing the canonical ID still resolves when ASC only has the
+    //    .v2 SKU. We then purchase the SKU StoreKit actually knows about.
+    const matched =
+      products.find((p) => p.productId === productId) ||
+      products.find((p) => baseProductId(p.productId) === baseProductId(productId));
     if (!matched) {
       console.warn(`[IAP]   ❌ Requested productId "${productId}" NOT in fetched list. `
         + `Available: [${products.map(p=>p.productId).join(', ')}]`);
@@ -325,7 +376,12 @@ export async function purchaseSubscription(productId) {
         + `Check App Store Connect "Cleared for Sale" = YES.`
       );
     }
-    console.log(`[IAP]   ✅ Matched product: ${matched.productId} — price: ${matched.localizedPrice || matched.price}`);
+    // Always buy the real SKU returned by StoreKit, never the canonical guess.
+    const realSku = matched.productId;
+    if (realSku !== productId) {
+      console.log(`[IAP]   ℹ️  Using StoreKit SKU "${realSku}" (requested "${productId}")`);
+    }
+    console.log(`[IAP]   ✅ Matched product: ${realSku} — price: ${matched.localizedPrice || matched.price}`);
 
     // 4) Trigger StoreKit payment sheet
     //    react-native-iap v12 iOS: use { sku: string } for single subscription.
@@ -333,11 +389,11 @@ export async function purchaseSubscription(productId) {
     console.log('[IAP]   Step 4: Calling RNIap.requestSubscription({ sku })...');
 
     if (Platform.OS === 'ios') {
-      await RNIap.requestSubscription({ sku: productId });
+      await RNIap.requestSubscription({ sku: realSku });
     } else {
       await RNIap.requestSubscription({
-        sku: productId,
-        subscriptionOffers: [{ sku: productId, offerToken: '' }],
+        sku: realSku,
+        subscriptionOffers: [{ sku: realSku, offerToken: '' }],
       });
     }
 
@@ -604,8 +660,7 @@ export async function restorePurchases() {
       ...history,
     ].filter(
       (p) =>
-        p.productId === PRODUCT_IDS.MONTHLY ||
-        p.productId === PRODUCT_IDS.ANNUAL
+        isMonthlyProduct(p.productId) || isAnnualProduct(p.productId)
     );
 
     if (subscriptionPurchases.length === 0) {
@@ -663,8 +718,7 @@ async function checkExistingPurchases() {
     const purchases = await RNIap.getAvailablePurchases();
     const subscriptions = purchases.filter(
       (p) =>
-        p.productId === PRODUCT_IDS.MONTHLY ||
-        p.productId === PRODUCT_IDS.ANNUAL
+        isMonthlyProduct(p.productId) || isAnnualProduct(p.productId)
     );
 
     if (subscriptions.length > 0) {

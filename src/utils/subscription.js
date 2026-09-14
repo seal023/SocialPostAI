@@ -25,6 +25,9 @@ import {
   isIAPAvailable,
   cleanupIAP,
   PRODUCT_IDS,
+  resolveProductId,
+  isMonthlyProduct,
+  isAnnualProduct,
 } from '../services/IAPService';
 
 // ---- Constants ----
@@ -391,8 +394,12 @@ export async function purchasePro(productId) {
       };
     }
 
-    console.log('[Subscription] Starting purchase for productId:', productId, '| matches MONTHLY?', productId === PRODUCT_IDS.MONTHLY, '| matches ANNUAL?', productId === PRODUCT_IDS.ANNUAL);
-    await purchaseSubscription(productId);
+    console.log('[Subscription] Starting purchase for productId:', productId, '| monthly?', isMonthlyProduct(productId), '| annual?', isAnnualProduct(productId));
+    // ASC may expose the .v2-suffixed SKU; resolve to whatever StoreKit returned
+    // so the Apple sheet actually opens (getSubscriptions filters by exact id).
+    const realSku = resolveProductId(productId);
+    console.log('[Subscription] Resolved to real SKU:', realSku);
+    await purchaseSubscription(realSku);
 
     // Purchase result is delivered asynchronously via callback
     // The caller should listen for state changes

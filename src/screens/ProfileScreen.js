@@ -37,6 +37,7 @@ import {
   resetTrialForTesting,
   PRODUCT_IDS,
 } from '../utils/subscription';
+import { baseProductId } from '../services/IAPService';
 import { useLanguage } from '../context/LanguageContext';
 import { signInWithApple, signOutApple, getAppleAuthState, isAppleAuthAvailable } from '../services/AppleAuthService';
 import { getPermissions } from '../utils/permissions';
@@ -189,7 +190,14 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
         if (products && products.length > 0) {
           // Merge real prices into PROFILE_TIERS
           PROFILE_TIERS = PROFILE_TIERS.map((tier) => {
-            const product = products.find((p) => p.productId === tier.productId);
+            // Match on the NORMALIZED id: StoreKit may return the `.v2` SKU
+            // while the tier is keyed by the canonical id (and vice versa).
+            // A plain `===` here silently failed, so the card kept showing the
+            // hardcoded fallback price — which would not match the amount Apple
+            // actually charges (App Store display rules require it to match).
+            const product =
+              products.find((p) => p.productId === tier.productId) ||
+              products.find((p) => baseProductId(p.productId) === tier.productId);
             if (product) {
               return {
                 ...tier,

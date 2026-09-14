@@ -53,11 +53,11 @@ const PRIVACY_URL = 'https://seal023.github.io/privacy-policy/';
 const TERMS_URL = 'https://seal023.github.io/terms-of-service/';
 
 // App Store product page + write-review deep link.
-// The numeric id equals the App Store Connect "Apple ID" (ascAppId 6799424230).
+// The numeric id equals the App Store Connect "Apple ID" (ascAppId 6801996062).
 // Once the app is live these open the App Store; on TestFlight (no public page
 // yet) the open fails and we fall back to an alert.
-const APP_STORE_URL = 'https://apps.apple.com/app/id6799424230';
-const APP_STORE_REVIEW_URL = 'https://apps.apple.com/app/id6799424230?action=write-review';
+const APP_STORE_URL = 'https://apps.apple.com/app/id6801996062';
+const APP_STORE_REVIEW_URL = 'https://apps.apple.com/app/id6801996062?action=write-review';
 
 // Pricing tiers — will be loaded dynamically from StoreKit via IAP
 // Fallback values used until products are fetched

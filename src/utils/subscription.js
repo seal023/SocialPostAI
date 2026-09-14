@@ -496,31 +496,51 @@ export async function restoreProPurchase() {
     if (!isIAPAvailable()) {
       return {
         success: false,
-        message: 'IAP not available in Expo Go',
+        messageKey: 'restore_failed_not_available',
       };
     }
 
     const restored = await restorePurchases();
 
     if (restored) {
-      // Verify cached receipt on next state load
-      // Push the new state to subscribed screens (the paywall closes, Pro unlocks).
+      // Active, Apple-verified entitlement found → keep Pro, push the new state
+      // to subscribed screens (the paywall closes, Pro unlocks).
       notifySubscriptionChanged();
-      return {
-        success: true,
-        message: 'Subscription restored successfully',
-      };
+      return { success: true };
+    }
+
+    // No active entitlement restored. If StoreKit POSITIVELY reports the signed-in
+    // Apple ID owns NO current subscription (stage 'no-entitlement' / 'historical-only',
+    // NOT a transient 'native-error'), reconcile the LOCAL flag: clear a stale 'pro'
+    // (e.g. an expired subscription still cached as Pro) back to free. This is the
+    // other half of "验证一下" — restore not only refuses to GRANT Pro for an
+    // expired sub, it also REVOKES a stale Pro when Apple confirms none is active.
+    // A 'native-error' result is inconclusive, so we keep the local status untouched
+    // rather than risk stripping a real subscriber on a transient glitch.
+    const last = getLastEntitlementResult();
+    if (last && (last.stage === 'no-entitlement' || last.stage === 'historical-only')) {
+      const wasPro = await isProUser();
+      if (wasPro) {
+        await saveSubscriptionStatus('free');
+        await clearCachedReceipt();
+        notifySubscriptionChanged();
+        return {
+          success: false,
+          titleKey: 'restore_revoked_title',
+          messageKey: 'restore_revoked_desc',
+        };
+      }
     }
 
     return {
       success: false,
-      message: 'No active subscription found to restore',
+      messageKey: 'restore_failed_desc',
     };
   } catch (error) {
     console.error('[Subscription] Restore failed:', error);
     return {
       success: false,
-      message: error.message || 'Restore failed',
+      messageKey: 'restore_failed_desc',
     };
   }
 }

@@ -826,6 +826,39 @@ const ENTITLEMENT_TIMEOUT_MS = 10000;
  * @param {string} reason - label for diagnostics ('launch' | 'paywall' | 'restore' | ...)
  * @returns {Promise<object|null>} the entitlement purchase found, or null
  */
+/**
+ * A subscription is "currently active" only if its expiry is in the FUTURE.
+ * We must NEVER let a transaction whose subscription has already lapsed
+ * re-grant Pro — that was the "restore shows Pro for an expired / 'production
+ * sandbox' subscription" bug. If the purchase object carries no expiry
+ * (non-consumable, or a platform where the field is absent), we trust it
+ * rather than deny a legitimate entitlement.
+ * @param {object} p - a react-native-iap purchase/transaction object
+ * @returns {boolean}
+ */
+function isActiveSubscription(p) {
+  if (!p) return false;
+  const exp =
+    p.expirationDate ?? p.expiresDate ?? p.expiryDate ??
+    p.expirationDateMs ?? p.expiresDateMs;
+  if (exp == null) return true;
+  const expMs = typeof exp === 'number' ? exp : Date.parse(String(exp));
+  if (!Number.isFinite(expMs)) return true;
+  return expMs > Date.now();
+}
+
+/**
+ * Single rigorous gate before we trust a transaction to unlock Pro:
+ * it must match ONE OF OUR subscription product IDs AND be currently active
+ * (unexpired). This is what turns "restore / verify" into a real Apple-account
+ * check instead of a loose product-id match.
+ */
+function isOurActiveSubscription(p) {
+  if (!p) return false;
+  if (!(isMonthlyProduct(p.productId) || isAnnualProduct(p.productId))) return false;
+  return isActiveSubscription(p);
+}
+
 export async function syncEntitlement(reason = 'manual') {
   loadRNIapModule();
   if (!RNIap || IS_RNIAP_STUB) {
@@ -840,66 +873,88 @@ export async function syncEntitlement(reason = 'manual') {
   // Warm the native product cache (see the Sk2 note above). Best-effort.
   try { await fetchProducts({ retries: 0, timeoutMs: FETCH_RETRY_TIMEOUT_MS }); } catch (e) { /* ignore */ }
 
-  const checks = [];
+  // --------------------------------------------------------------------------
+  // AUTHORITATIVE check — only CURRENTLY ACTIVE, Apple-verified entitlements.
+  // On StoreKit 2 this reads Transaction.currentEntitlements: Apple populates
+  // it ONLY after the Apple ID is authenticated AND the entitlement is valid
+  // right now. This IS the "Apple account verification" — a local flag, a stale
+  // receipt cache, or a years-old / expired purchase must never re-grant Pro.
+  // --------------------------------------------------------------------------
+  let activeError = null;
   if (typeof RNIap.getAvailablePurchases === 'function') {
-    checks.push({
-      label: 'getAvailablePurchases',
-      // onlyIncludeActiveItems: Sk2 → currentEntitlements (unexpired only).
-      // Sk1 ignores the option and returns unfinished transactions.
-      call: () => RNIap.getAvailablePurchases({ onlyIncludeActiveItems: true }),
-    });
-  }
-  if (typeof RNIap.getPurchaseHistory === 'function') {
-    checks.push({
-      label: 'getPurchaseHistory',
-      call: () => RNIap.getPurchaseHistory({ onlyIncludeActiveItems: false }),
-    });
-  }
-
-  let lastError = null;
-  for (const check of checks) {
     try {
       const raw = await boundedNativeCall(
-        check.call(),
+        RNIap.getAvailablePurchases({ onlyIncludeActiveItems: true }),
         ENTITLEMENT_TIMEOUT_MS,
         'E_ENTITLEMENT_TIMEOUT',
-        `${check.label}()`,
+        'getAvailablePurchases()',
       );
       const list = Array.isArray(raw) ? raw : [];
-      const subs = list.filter(
+      // Rigorous gate: OUR product id AND still unexpired. An expired /
+      // "production sandbox"-lapsed subscription is NOT a valid entitlement.
+      const subs = list.filter(isOurActiveSubscription);
+      if (subs.length > 0) {
+        subs.sort((a, b) => (b.transactionDate || 0) - (a.transactionDate || 0));
+        const best = subs[0];
+        console.log(`[IAP] ✅ Active entitlement verified with Apple (${reason}):`, best.productId);
+
+        await cacheReceipt(best);
+        if (onPurchaseSuccessCallback) {
+          await onPurchaseSuccessCallback({
+            productId: best.productId,
+            receipt: best.transactionReceipt,
+            purchaseDate: best.transactionDate || Date.now(),
+          });
+        }
+        lastEntitlementResult = {
+          at: Date.now(), reason, ok: true, stage: 'found', mode: IAP_STOREKIT_MODE,
+          via: 'currentEntitlements(active)', productId: best.productId, count: subs.length,
+        };
+        return best;
+      }
+      console.log(`[IAP] Entitlement check (active, ${reason}): no CURRENT subscription found`);
+    } catch (e) {
+      activeError = e;
+      console.warn(`[IAP] Entitlement check (getAvailablePurchases, ${reason}) failed:`, e?.code, e?.message);
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // DIAGNOSTIC-only check — purchase HISTORY (expired / refunded / lapsed
+  // "production sandbox" subs included). We read it only to tell the user WHAT
+  // Apple sees; it must NEVER grant Pro.
+  // --------------------------------------------------------------------------
+  let historyInfo = null;
+  if (typeof RNIap.getPurchaseHistory === 'function') {
+    try {
+      const raw = await boundedNativeCall(
+        RNIap.getPurchaseHistory({ onlyIncludeActiveItems: false }),
+        ENTITLEMENT_TIMEOUT_MS,
+        'E_ENTITLEMENT_TIMEOUT',
+        'getPurchaseHistory()',
+      );
+      const list = Array.isArray(raw) ? raw : [];
+      const pastSubs = list.filter(
         (p) => p && (isMonthlyProduct(p.productId) || isAnnualProduct(p.productId))
       );
-      if (subs.length === 0) {
-        console.log(`[IAP] Entitlement check (${check.label}, ${reason}): no subscription found`);
-        continue;
+      if (pastSubs.length > 0) {
+        historyInfo = {
+          count: pastSubs.length,
+          productIds: pastSubs.map((s) => s.productId),
+          note: 'HISTORICAL_ONLY_NOT_GRANTED',
+        };
+        console.log(`[IAP] Purchase history shows ${pastSubs.length} past subscription transaction(s) — NOT used to grant Pro (may be expired/refunded/lapsed).`);
       }
-      subs.sort((a, b) => (b.transactionDate || 0) - (a.transactionDate || 0));
-      const best = subs[0];
-      console.log(`[IAP] ✅ Entitlement found via ${check.label} (${reason}):`, best.productId);
-
-      await cacheReceipt(best);
-      if (onPurchaseSuccessCallback) {
-        await onPurchaseSuccessCallback({
-          productId: best.productId,
-          receipt: best.transactionReceipt,
-          purchaseDate: best.transactionDate || Date.now(),
-        });
-      }
-      lastEntitlementResult = {
-        at: Date.now(), reason, ok: true, stage: 'found', mode: IAP_STOREKIT_MODE,
-        via: check.label, productId: best.productId, count: subs.length,
-      };
-      return best;
     } catch (e) {
-      lastError = e;
-      console.warn(`[IAP] Entitlement check (${check.label}, ${reason}) failed:`, e?.code, e?.message);
+      console.warn(`[IAP] getPurchaseHistory (${reason}) failed:`, e?.code, e?.message);
     }
   }
 
   lastEntitlementResult = {
     at: Date.now(), reason, ok: false, mode: IAP_STOREKIT_MODE,
-    stage: lastError ? 'native-error' : 'no-entitlement',
-    error: lastError ? { code: lastError.code, message: lastError.message } : null,
+    stage: historyInfo ? 'historical-only' : (activeError ? 'native-error' : 'no-entitlement'),
+    history: historyInfo,
+    error: activeError ? { code: activeError.code, message: activeError.message } : null,
   };
   return null;
 }

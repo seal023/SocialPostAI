@@ -543,9 +543,13 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
       console.log('[ProfileScreen] restoreProPurchase result:', result);
 
       if (!result.success) {
-        // No purchase to restore (or error) — tell the user; the subscription
-        // event only fires when an actual restored transaction is delivered.
-        Alert.alert(t('restore_failed_title'), result.message);
+        // No purchase to restore (or a stale Pro was just revoked) — tell the
+        // user; the subscription event only fires when an actual restored
+        // transaction is delivered.
+        Alert.alert(
+          t(result.titleKey || 'restore_failed_title'),
+          t(result.messageKey || 'restore_failed_desc'),
+        );
       } else if (!proWelcomeShownRef.current) {
         // Restore succeeded → greet from here (the shared status listener no
         // longer greets, precisely so a passive reconcile can never pop a

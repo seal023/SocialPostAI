@@ -34,8 +34,13 @@ let LOAD_ATTEMPTED = false;
 // ============================================================
 // react-native-iap v12 ships BOTH native implementations (RNIapIos =
 // StoreKit 1, RNIapIosSk2 = StoreKit 2) and lets us choose at runtime with
-// setup({ storekitMode }). We now prefer StoreKit 2 on iOS >= 15 via
-// STOREKIT_HYBRID_MODE (which still falls back to Sk1 on older devices).
+// setup({ storekitMode }). We TEMPORARILY force STOREKIT1_MODE (2026-09-14):
+// StoreKit 2's Product.products(for:) silently returns empty for subscriptions
+// that are still "Ready to Submit" / not yet submitted with a build, so purchases
+// fail with E_DEVELOPER_ERROR "Invalid product ID". StoreKit 1's SKProductsRequest
+// returns those products in the sandbox, so Sk1 unblocks sandbox purchasing today.
+// TODO: flip back to STOREKIT_HYBRID_MODE once the .v2 subscriptions are submitted
+// in App Store Connect (subscription group submitted with an app version).
 //
 // Why this is the fix for three separate on-device failures:
 //
@@ -665,9 +670,23 @@ export async function purchaseSubscription(productId) {
       const fetchCause = lf.error
         ? `${lf.error.code}: ${lf.error.message}`
         : `store returned ${lf.rawCount ?? 0} raw item(s), stage=${lf.stage || 'unknown'}`;
+      // Classify the failure so the on-screen alert tells the user WHAT TO FIX:
+      //   empty-from-store → the product itself is not live (ASC side)
+      //   timeout/native-error → StoreKit never answered (account / network / sandbox)
+      let hint;
+      if (lf.stage === 'empty-from-store') {
+        hint = '商品未在 App Store 生效：请确认订阅处于"准备提交"且元数据完整、Bundle ID 与 App 记录一致、付费 App 协议/银行税务有效';
+      } else if (lf.error && lf.error.code === 'E_FETCH_TIMEOUT') {
+        hint = 'StoreKit 无响应：请确认已登录 App Store / 沙盒账号（TestFlight 沙盒包需要沙盒账号），且设备地区与商品可售地区一致';
+      } else if (lf.stage === 'native-error') {
+        hint = 'StoreKit 报错：可能是账号状态或沙盒问题，请重试并检查 App Store 登录';
+      } else {
+        hint = '商品拉取失败：请检查 App Store 账号与商品配置';
+      }
       const err = new Error(
         `PRODUCT_NOT_FOUND: ${lastError.code || 'E_UNKNOWN'}: ${lastError.message} `
         + `| 商品拉取: ${fetchCause} `
+        + `| 可能原因: ${hint} `
         + `| 已尝试 SKU: ${candidates.join(', ')} `
         + `| StoreKit 模式: ${IAP_STOREKIT_MODE}`
       );

@@ -139,12 +139,17 @@ export async function runIAPProbe() {
     // 3) The actual product fetch (bounded; never throws — returns [])
     const res = await withTimeout(fetchProducts(), 14000);
     if (res && res.timedOut) {
+      // The reason a product request never settles is different per StoreKit mode,
+      // so the hint must not claim "StoreKit 1" while we are actually on Sk2.
+      const mode = getIAPDiagnostics().storekitMode;
       return {
         ok: false,
         reason: 'timeout',
         storefront,
         stage: 'never-settled',
-        errorText: 'getSubscriptions() 14s 未返回（StoreKit 1 的 didFailWithError 不会 reject，会永久挂起）',
+        errorText: mode === 'sk2'
+          ? 'getSubscriptions() 14s 未返回。StoreKit 2 下常见原因：未登录 App Store/沙盒账号 · 商品未在沙盒生效 · 到 Apple 商店的网络超时'
+          : 'getSubscriptions() 14s 未返回（StoreKit 1 的 didFailWithError 不会 reject，会永久挂起）',
       };
     }
 
@@ -228,9 +233,9 @@ export async function collectDiagnostics() {
     value: d.storekitMode === 'sk2'
       ? 'StoreKit 2（HYBRID · 真实报错，不再哑挂起）'
       : d.storekitMode === 'sk1'
-        ? 'StoreKit 1（兼容性回退）'
+        ? 'StoreKit 1（临时回退 · 沙盒可返回未提交商品，付款可用）'
         : (d.storekitMode || 'unknown'),
-    status: d.storekitMode === 'sk2' ? 'ok' : (d.storekitMode === 'sk1' ? 'warn' : 'info'),
+    status: d.storekitMode === 'sk2' ? 'ok' : 'info',
   });
   if (d.setupError) {
     report.push({ label: 'StoreKit 初始化错误', value: String(d.setupError), status: 'fail' });

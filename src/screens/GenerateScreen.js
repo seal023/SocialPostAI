@@ -534,13 +534,16 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
               style={[styles.textInput, { color: theme.title, paddingRight: topic.length > 0 ? 36 : 0 }]}
               value={topic}
               onChangeText={setTopic}
-              placeholder={t('topic_placeholder')}
-              placeholderTextColor={theme.placeholder}
               multiline
               numberOfLines={3}
               maxLength={100}
               textAlignVertical="top"
             />
+            {topic.length === 0 && (
+              <Text style={[styles.topicHint, { color: theme.placeholder }]} pointerEvents="none">
+                {t('topic_placeholder')}
+              </Text>
+            )}
             {topic.length > 0 && (
               <TouchableOpacity
                 style={styles.clearBtn}
@@ -1204,6 +1207,15 @@ const styles = StyleSheet.create({
     minHeight: 80,
     lineHeight: 22,
     textAlignVertical: 'top',
+  },
+  topicHint: {
+    position: 'absolute',
+    top: SPACING.md,
+    left: SPACING.md,
+    right: SPACING.md,
+    fontSize: FONT_SIZE.md,
+    lineHeight: 22,
+    opacity: 0.65,
   },
   inputFooter: {
     flexDirection: 'row',

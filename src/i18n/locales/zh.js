@@ -12,7 +12,7 @@ const zh = {
   nav_brand: 'SocialPost AI',
   select_platform: '选择平台',
   enter_topic: '输入主题',
-  topic_placeholder: '输入产品名、活动主题或关键词...',
+  topic_placeholder: '想发什么？说个方向，剩下的交给我',
   select_style: '选择风格',
   tone_thermometer: '语气温度计',
   word_count: '字数控制',

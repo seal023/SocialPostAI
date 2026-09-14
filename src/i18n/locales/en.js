@@ -12,7 +12,7 @@ const en = {
   nav_brand: 'SocialPost AI',
   select_platform: 'Select Platform',
   enter_topic: 'Enter Topic',
-  topic_placeholder: 'Enter product name, event topic, or keywords...',
+  topic_placeholder: "What do you want to post? Give me a direction, I'll handle the rest",
   select_style: 'Select Style',
   tone_thermometer: 'Tone Thermometer',
   word_count: 'Word Count',

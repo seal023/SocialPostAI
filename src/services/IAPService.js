@@ -382,8 +382,17 @@ function setupPurchaseListeners() {
 // request after launch came back E_FETCH_TIMEOUT while a later identical request
 // resolved — i.e. a cold StoreKit start-up problem, not a bad product ID.
 // A single retry makes that transient failure invisible to the user.
-const FETCH_TIMEOUT_MS = 12000;
-const FETCH_RETRY_TIMEOUT_MS = 6000;
+//
+// 2026-09-14 (later, same day, on device): the retry window was 6000ms while the
+// SAME request succeeded in 8618ms a moment later. A retry window shorter than
+// the real latency can NEVER win — the retry is guaranteed to fail, so a slow
+// but perfectly healthy StoreKit got reported as dead and the purchase aborted
+// with "getSubscriptions() did not settle within 6000ms" and never opened
+// Apple's sheet. Both windows are now generous: StoreKit 2's getItems() re-hits
+// the network on every call and ~9s is normal on a slow storefront, so anything
+// below ~15s is a guaranteed false negative.
+const FETCH_TIMEOUT_MS = 20000;
+const FETCH_RETRY_TIMEOUT_MS = 15000;
 
 let lastFetchResult = null;   // { at, ms, ok, stage, rawCount, fetchedIds, attempts, error? }
 let inflightFetch = null;     // shared promise — dedupes concurrent callers
@@ -430,9 +439,9 @@ export async function fetchProducts({ retries = 1, timeoutMs = FETCH_TIMEOUT_MS 
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       attempts = attempt;
-      // Leftover attempt gets the long window (cold StoreKit start-up is slow);
-      // the retry gets a short one, because a retry that also stalls is a real
-      // failure rather than slowness.
+      // First attempt gets the long cold-start window; the retry gets a slightly
+      // shorter but still generous one (see FETCH_RETRY_TIMEOUT_MS — a retry
+      // window below the real latency is a guaranteed false negative).
       const bound = attempt === 1 ? timeoutMs : FETCH_RETRY_TIMEOUT_MS;
       try {
         console.log(`[IAP] Fetching products (attempt ${attempt}/${maxAttempts}, mode=${IAP_STOREKIT_MODE}):`,
@@ -630,26 +639,40 @@ export async function purchaseSubscription(productId) {
       }
     }
 
-    // 2) Warm the native product cache. BOTH StoreKit paths need this before a
-    //    purchase can start — Sk1 looks the SKU up in `validProducts`, Sk2 in
-    //    `productStore`, and neither will open a sheet for an unknown SKU.
+    // 2) Ensure the native product cache is warm. BOTH StoreKit paths need this
+    //    before a purchase can start — Sk1 looks the SKU up in `validProducts`,
+    //    Sk2 in `productStore`, and neither will open a sheet for an unknown SKU.
     //
     //    A failed fetch is NO LONGER a hard stop (that was the "第一次购买直接报
-    //    NO_PRODUCTS，Apple 支付面板根本没弹出" bug). We retry once and, if we still
-    //    have no product list, we ATTEMPT the purchase anyway with the candidate
-    //    SKUs. Every outcome is then readable:
+    //    NO_PRODUCTS，Apple 支付面板根本没弹出" bug). If we end up with no product
+    //    list we still ATTEMPT the purchase with the candidate SKUs. Every outcome
+    //    is then readable:
     //      • the native store happened to be warm → Apple sheet opens ✅
     //      • the store really is cold → the native layer rejects with a specific
     //        error (E_DEVELOPER_ERROR / "Invalid product ID"), which we surface
     //        instead of a self-invented NO_PRODUCTS message.
-    console.log('[IAP]   Step 2: fetchProducts (getSubscriptions) to warm StoreKit cache...');
-    let products = await fetchProducts();
-    if (products.length === 0) {
-      console.warn('[IAP]   ⚠️  First fetch returned 0 — retrying once before attempting purchase...');
-      products = await fetchProducts({ retries: 1, timeoutMs: FETCH_RETRY_TIMEOUT_MS });
+    //
+    //    First choice: REUSE the last successful catalog fetch. StoreKit 2's
+    //    getItems() re-hits the network on EVERY call (~9s on a slow storefront)
+    //    but the native cache it fills stays warm — so re-fetching right before a
+    //    purchase only adds latency and one more chance to time out (which is
+    //    exactly what stopped the sheet from opening on 2026-09-14).
+    const CATALOG_FRESH_MS = 120000;
+    let products = [];
+    const lastF = lastFetchResult;
+    if (lastF && lastF.ok && lastFetchedProductIds.length > 0
+        && Date.now() - (lastF.at || 0) < CATALOG_FRESH_MS) {
+      console.log(`[IAP]   Step 2: reusing recent catalog fetch (age ${Date.now() - lastF.at}ms):`,
+        lastFetchedProductIds.join(', '));
+      products = lastFetchedProductIds.map((id) => ({ productId: id }));
+    } else {
+      console.log('[IAP]   Step 2: fetchProducts (getSubscriptions) to warm StoreKit cache...');
+      // fetchProducts() already retries once internally (2 attempts), so a second
+      // nested retry call here would only add latency, never reliability.
+      products = await fetchProducts();
+      console.log(`[IAP]   → Fetched ${products.length} product(s) from App Store:`,
+        products.map((p) => `${p.productId} (${p.localizedPrice || p.price || ''})`));
     }
-    console.log(`[IAP]   → Fetched ${products.length} product(s) from App Store:`,
-      products.map(p => `${p.productId} (${p.localizedPrice || p.price})`));
 
     // 3) Resolve which SKU to buy.
     //    Match exactly first, then fall back to a `.v2`-normalized match so a
@@ -675,7 +698,7 @@ export async function purchaseSubscription(productId) {
       console.warn('[IAP]     • stage=native-error / E_FETCH_TIMEOUT → StoreKit 报错或超时（设备/账号/网络）');
       console.warn('[IAP]     → Attempting purchase anyway with candidate SKUs:', candidates.join(', '));
     } else {
-      console.log(`[IAP]   ✅ Matched product: ${matched.productId} — price: ${matched.localizedPrice || matched.price}`);
+      console.log(`[IAP]   ✅ Matched product: ${matched.productId} — price: ${matched.localizedPrice || matched.price || ''}`);
       if (matched.productId !== productId) {
         console.log(`[IAP]   ℹ️  Using StoreKit SKU "${matched.productId}" (requested "${productId}")`);
       }

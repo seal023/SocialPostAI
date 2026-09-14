@@ -205,10 +205,13 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
       } catch (e) {}
       if (state.status === 'pro') {
         setShowSubscription(false); // auto-close paywall on success
-        if (!proWelcomeShownRef.current) {
-          proWelcomeShownRef.current = true;
-          Alert.alert('✅ ' + t('purchase_success_title'), t('purchase_success_desc'));
-        }
+        // ⚠️ The "Purchase Successful" alert is deliberately NOT fired here.
+        // This listener also runs for PASSIVE reconciles (app init, every paywall
+        // focus), which flip an ALREADY-subscribed user's status to 'pro'. Greeting
+        // here therefore made a genuinely FAILED purchase pop a "Purchase
+        // Successful / Welcome to Pro!" alert on top of its failure dialog, even
+        // though nothing was bought. Only the two user-initiated flows greet now:
+        // handlePurchase() and handleRestorePurchase() below.
       }
     });
     return unsub;
@@ -432,11 +435,18 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
       }
 
       // StoreKit resolved the purchase promise → the transaction completed on
-      // Apple's side. The listener path (purchaseUpdatedListener → subscription
-      // success callback) normally unlocks Pro and pushes the new state through
-      // subscribeSubscription. Reconcile here as well, so the unlock is
-      // guaranteed even if that event is missed or lands late (e.g. the
-      // listener was attached after the transaction was delivered).
+      // Apple's side. Greet NOW: this resolved promise is the authoritative
+      // "Apple finished the transaction" signal, and the reconcile below can take
+      // several seconds (it re-warms the catalog and asks StoreKit what we own),
+      // so waiting for it would delay the alert noticeably.
+      if (!proWelcomeShownRef.current) {
+        proWelcomeShownRef.current = true;
+        Alert.alert('✅ ' + t('purchase_success_title'), t('purchase_success_desc'));
+      }
+
+      // Then reconcile, so the unlock is guaranteed even if the purchaseUpdated
+      // listener event was missed or landed late (e.g. the listener was attached
+      // after the transaction was delivered).
       try {
         const found = await syncProEntitlement('post-purchase');
         if (found) {
@@ -486,10 +496,15 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
         // No purchase to restore (or error) — tell the user; the subscription
         // event only fires when an actual restored transaction is delivered.
         Alert.alert(t('restore_failed_title'), result.message);
+      } else if (!proWelcomeShownRef.current) {
+        // Restore succeeded → greet from here (the shared status listener no
+        // longer greets, precisely so a passive reconcile can never pop a
+        // "Purchase Successful" alert for an already-subscribed user).
+        proWelcomeShownRef.current = true;
+        Alert.alert('✅ ' + t('purchase_success_title'), t('purchase_success_desc'));
       }
-      // On success, the purchaseUpdatedListener fires and pushes the new state
-      // via subscribeSubscription (closes paywall + welcome alert). No manual
-      // refresh needed.
+      // On success the purchaseUpdatedListener also pushes the new state via
+      // subscribeSubscription (closes the paywall + unlocks Pro live).
     } catch (error) {
       console.error('[ProfileScreen] Restore error:', error);
       Alert.alert(t('restore_failed_title'), t('restore_failed_desc'));

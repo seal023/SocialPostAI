@@ -883,14 +883,14 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
           style={[styles.sectionCard, { backgroundColor: theme.card }]}
           activeOpacity={0.7}
           onPress={() => {
-            // Don't open the paywall for an existing subscriber — it would offer
-            // "升级到 Pro" to someone who already owns Pro and lead to a phantom
-            // purchase. Tell them they're already subscribed instead.
-            if (subscriptionState.status === 'pro') {
-              Alert.alert(t('already_subscribed_title'), t('already_subscribed_desc'));
-            } else {
-              setShowSubscription(true);
-            }
+            // Always open the paywall — an existing subscriber must still be able to
+            // REVIEW the plans/pricing and find the subscription-management route.
+            // Interception belongs on the PURCHASE ACTION, not on the page entry:
+            // the paywall's subscribe button is disabled while Pro is active, and
+            // handlePurchase re-checks the live entitlement before ever calling
+            // StoreKit. (Blocking the entry instead made Pro users unable to see the
+            // paid screen at all — reported as "再也看不到付费界面了".)
+            setShowSubscription(true);
           }}
         >
           <View style={styles.favRow}>
@@ -1124,10 +1124,12 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
         <View style={[styles.modalOverlay, { backgroundColor: theme.overlay }]}>
           <View style={[styles.subModalCard, { backgroundColor: theme.card }]}>
             <Text style={[styles.modalTitle, { color: theme.title }]}>
-              👑 {t('upgrade_to_pro')}
+              👑 {subscriptionState.status === 'pro' ? t('subscription_active') : t('upgrade_to_pro')}
             </Text>
             <Text style={[styles.modalSubtitle, { color: theme.subtitle }]}>
-              {t('go_pro_subtitle')}
+              {subscriptionState.status === 'pro'
+                ? t('already_subscribed_desc')
+                : t('go_pro_subtitle')}
             </Text>
 
             {/* Feature comparison */}
@@ -1225,18 +1227,29 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
             </View>
 
             <TouchableOpacity
-              style={[styles.modalCloseBtn, { backgroundColor: theme.primary, opacity: isPurchasing ? 0.6 : 1 }]}
+              style={[styles.modalCloseBtn, {
+                backgroundColor: subscriptionState.status === 'pro' ? theme.border : theme.primary,
+                opacity: isPurchasing || subscriptionState.status === 'pro' ? 0.6 : 1,
+              }]}
               onPress={() => {
+                // INTERCEPTION POINT: never start a purchase for an entitlement we
+                // already own — StoreKit would resolve WITHOUT a payment sheet and
+                // we'd celebrate a purchase that never happened. handlePurchase also
+                // re-checks the live entitlement (state can be stale), so this guard
+                // is belt-and-braces.
+                if (subscriptionState.status === 'pro') return;
                 const tier = PROFILE_TIERS.find((t) => t.id === selectedTier);
                 if (tier) handlePurchase(tier);
               }}
               activeOpacity={0.7}
-              disabled={isPurchasing}
+              disabled={isPurchasing || subscriptionState.status === 'pro'}
             >
               {isPurchasing ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />
               ) : (
-                <Text style={styles.modalCloseText}>{t('subscribe_btn')}</Text>
+                <Text style={styles.modalCloseText}>
+                  {subscriptionState.status === 'pro' ? t('subscription_active') : t('subscribe_btn')}
+                </Text>
               )}
             </TouchableOpacity>
 

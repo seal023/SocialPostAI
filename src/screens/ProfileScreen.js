@@ -201,6 +201,14 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
       const subState = await getSubscriptionState();
       setSubscriptionState(subState);
     } catch (e) {}
+    // Re-reconcile Pro status with what StoreKit says the user actually owns,
+    // every time the Profile tab (and thus the paywall) becomes focused. This
+    // fixes "已购买却仍显示升级到 Pro": a purchase made elsewhere / a restored
+    // subscription is reflected immediately, without waiting for a crash-prone
+    // startup check.
+    try {
+      await syncProEntitlement('paywall-focus');
+    } catch (e) {}
     try {
       const profile = await loadUserProfile();
       setUserProfile(profile);

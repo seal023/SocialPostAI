@@ -29,6 +29,61 @@ let RNIap = null;
 let IS_RNIAP_STUB = true;  // default assume stub until real module loads
 let LOAD_ATTEMPTED = false;
 
+// ============================================================
+// StoreKit mode selection (iOS) — 'sk2' | 'sk1' | 'stub' | 'unknown'
+// ============================================================
+// react-native-iap v12 ships BOTH native implementations (RNIapIos =
+// StoreKit 1, RNIapIosSk2 = StoreKit 2) and lets us choose at runtime with
+// setup({ storekitMode }). We now prefer StoreKit 2 on iOS >= 15 via
+// STOREKIT_HYBRID_MODE (which still falls back to Sk1 on older devices).
+//
+// Why this is the fix for three separate on-device failures:
+//
+//  1. Sk1 `getItems()` (SKProductsRequest) can FAIL WITHOUT EVER CALLING BACK
+//     on iOS 26. RNIapIos.swift's `request(_:didFailWithError:)` only rejects
+//     promises for SKReceiptRefreshRequest — a failed *products* request leaves
+//     the JS promise pending forever. Observed on device as:
+//     "E_FETCH_TIMEOUT: getSubscriptions() did not settle within 12000ms".
+//     Sk2's `getItems()` is `try await Product.products(for:)` — it resolves or
+//     THROWS, so the real Apple error now reaches JS and the diagnostics panel.
+//
+//  2. Sk1 needs SKPaymentQueue.default().add(self), which throws an uncaught
+//     ObjC exception off the main thread on iOS 26 (SIGABRT at launch) — that is
+//     what scripts/patch-rniap-ios-init.js works around. Sk2 observes
+//     `Transaction.updates` and touches no SKPaymentQueue.
+//
+//  3. Sk2 `getAvailableItems(onlyIncludeActiveItems: true)` reads
+//     `Transaction.currentEntitlements` — a LOCAL query with no sign-in prompt
+//     and no `restoreCompletedTransactions()`. That lets us reconcile an
+//     already-owned subscription safely (the "已经购买了却仍显示升级到 Pro" bug),
+//     which was impossible on Sk1 without the restore sheet.
+let IAP_STOREKIT_MODE = 'unknown';
+let IAP_SETUP_ERROR = null;
+
+function enableBestStoreKit() {
+  if (!RNIap || IS_RNIAP_STUB) {
+    IAP_STOREKIT_MODE = 'stub';
+    return;
+  }
+  if (Platform.OS !== 'ios') {
+    IAP_STOREKIT_MODE = 'sk1'; // Android/Play path — mode flag is iOS-only
+    return;
+  }
+  try {
+    if (typeof RNIap.setup === 'function') {
+      RNIap.setup({ storekitMode: 'STOREKIT_HYBRID_MODE' });
+    }
+    const usingSk2 = typeof RNIap.isIosStorekit2 === 'function' && RNIap.isIosStorekit2();
+    IAP_STOREKIT_MODE = usingSk2 ? 'sk2' : 'sk1';
+    console.log(`[IAP] StoreKit mode = ${IAP_STOREKIT_MODE}`
+      + (usingSk2 ? ' (StoreKit 2 — native products request can no longer hang silently)' : ' (StoreKit 1 fallback)'));
+  } catch (e) {
+    IAP_SETUP_ERROR = e?.message || String(e);
+    IAP_STOREKIT_MODE = 'sk1';
+    console.warn('[IAP] setup({storekitMode}) failed — staying on StoreKit 1:', IAP_SETUP_ERROR);
+  }
+}
+
 function loadRNIapModule() {
   if (RNIap || LOAD_ATTEMPTED) return;
   LOAD_ATTEMPTED = true;
@@ -41,6 +96,9 @@ function loadRNIapModule() {
       RNIap = realMod;
       IS_RNIAP_STUB = false;
       console.log('[IAP] ✅ Real react-native-iap module loaded (native build)');
+      // Must run BEFORE initConnection()/getSubscriptions() so every later
+      // native call is routed to the chosen module.
+      enableBestStoreKit();
     } else {
       console.warn('[IAP] react-native-iap JS module loaded but missing native methods — falling back to stub');
     }
@@ -219,7 +277,7 @@ function setupPurchaseListeners() {
   });
 
   // Listen for purchase errors
-  purchaseErrorListener = RNIap.purchaseErrorListener((error) => {
+  purchaseErrorListener = RNIap.purchaseErrorListener(async (error) => {
     console.error('[IAP] Purchase error:', error.code, error.message);
 
     // User cancelled — don't show error alert
@@ -227,6 +285,18 @@ function setupPurchaseListeners() {
       console.log('[IAP] User cancelled purchase');
       return;
     }
+
+    // "Already subscribed" is NOT really an error: StoreKit refuses the purchase
+    // BECAUSE the entitlement already exists. Reconcile before we surface a
+    // failure, otherwise the user sees an error while being a paying customer.
+    // (On device: second tap → Apple's "你目前已订阅此项" → app still said Free.)
+    try {
+      const found = await syncEntitlement('purchase-error');
+      if (found) {
+        console.log('[IAP] Purchase error was actually an existing entitlement — Pro unlocked');
+        return;
+      }
+    } catch (e) { /* fall through to the error callback */ }
 
     if (onPurchaseErrorCallback) {
       onPurchaseErrorCallback(error);
@@ -256,12 +326,18 @@ function setupPurchaseListeners() {
 //
 // So we (1) keep the raw native outcome for the in-app diagnostics, (2) bound
 // the native call ourselves, and (3) never run two concurrent native requests:
-// the iOS module holds a SINGLE productsRequest / latest-promise slot, so a
+// the Sk1 module holds a SINGLE productsRequest / latest-promise slot, so a
 // second concurrent getSubscriptions() overwrites the first promise and leaves
 // the earlier caller hanging.
+//
+// 2026-09-14: we additionally RETRY once. On device the very first products
+// request after launch came back E_FETCH_TIMEOUT while a later identical request
+// resolved — i.e. a cold StoreKit start-up problem, not a bad product ID.
+// A single retry makes that transient failure invisible to the user.
 const FETCH_TIMEOUT_MS = 12000;
+const FETCH_RETRY_TIMEOUT_MS = 6000;
 
-let lastFetchResult = null;   // { at, ms, ok, stage, rawCount, fetchedIds, error? }
+let lastFetchResult = null;   // { at, ms, ok, stage, rawCount, fetchedIds, attempts, error? }
 let inflightFetch = null;     // shared promise — dedupes concurrent callers
 
 function boundedNativeCall(promise, ms, code, label) {
@@ -283,7 +359,7 @@ function boundedNativeCall(promise, ms, code, label) {
  * Fetch subscription product details from StoreKit / Google Play.
  * @returns {Promise<Array>} Array of product objects with price, title, etc.
  */
-export async function fetchProducts() {
+export async function fetchProducts({ retries = 1, timeoutMs = FETCH_TIMEOUT_MS } = {}) {
   loadRNIapModule();
   if (!RNIap) {
     lastFetchResult = {
@@ -300,72 +376,114 @@ export async function fetchProducts() {
   inflightFetch = (async () => {
     lastFetchAttemptIds = [...ALL_PRODUCT_IDS];
     const startedAt = Date.now();
-    try {
-      console.log('[IAP] Fetching products:', ALL_PRODUCT_IDS);
-      const raw = await boundedNativeCall(
-        RNIap.getSubscriptions({ skus: ALL_PRODUCT_IDS }),
-        FETCH_TIMEOUT_MS,
-        'E_FETCH_TIMEOUT',
-        'getSubscriptions()',
-      );
-      const list = Array.isArray(raw) ? raw : [];
-      const rawIds = list.map((p) => p && p.productId).filter(Boolean);
-      lastFetchedProductIds = rawIds;
-      lastFetchResult = {
-        at: Date.now(),
-        ms: Date.now() - startedAt,
-        ok: rawIds.length > 0,
-        // "empty-from-store" = StoreKit DID answer, it just has no product for
-        // any requested ID. That is the ASC-side signature.
-        stage: rawIds.length > 0 ? 'ok' : 'empty-from-store',
-        rawCount: list.length,
-        fetchedIds: rawIds,
-      };
-      console.log(`[IAP] Products loaded: ${list.length} raw item(s), ${rawIds.length} with a productId`);
+    const maxAttempts = Math.max(1, retries + 1);
+    let attempts = 0;
+    let lastError = null;
 
-      // Normalize product data for UI
-      return list.map((product) => ({
-      productId: product.productId,
-      title: product.title,
-      description: product.description,
-      price: product.price,           // Localized price string (e.g. "$6.99")
-      localizedPrice: product.localizedPrice,
-      currency: product.currency,
-      // priceValue: numeric price used for sorting / trial-period math.
-      // product.price is a LOCALIZED string ("$6.99", "¥38.00") and parseFloat
-      // returns NaN on iOS. Prefer the canonical micro-amount field when present
-      // (iOS/Android both expose it), and fall back to a sanitized parse of the
-      // localized string so dev/legacy callers still get a usable number.
-      priceValue: (typeof product.priceAmountMicros === 'number'
-        ? product.priceAmountMicros / 1000000
-        : parseFloat(String(product.price || '').replace(/[^0-9.]/g, ''))
-      ) || 0,
-      // iOS-specific subscription period info
-      subscriptionPeriodNumberIOS: product.subscriptionPeriodNumberIOS,
-      subscriptionPeriodUnitIOS: product.subscriptionPeriodUnitIOS,
-      introductoryPriceIOS: product.introductoryPriceIOS,
-      }));
-    } catch (error) {
-      lastFetchResult = {
-        at: Date.now(),
-        ms: Date.now() - startedAt,
-        ok: false,
-        stage: 'native-error',
-        rawCount: 0,
-        fetchedIds: [],
-        error: {
-          code: error?.code || 'E_FETCH_UNKNOWN',
-          message: error?.message || String(error),
-        },
-      };
-      console.error('[IAP] Failed to fetch products:', error);
-      return [];
-    } finally {
-      inflightFetch = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      attempts = attempt;
+      // Leftover attempt gets the long window (cold StoreKit start-up is slow);
+      // the retry gets a short one, because a retry that also stalls is a real
+      // failure rather than slowness.
+      const bound = attempt === 1 ? timeoutMs : FETCH_RETRY_TIMEOUT_MS;
+      try {
+        console.log(`[IAP] Fetching products (attempt ${attempt}/${maxAttempts}, mode=${IAP_STOREKIT_MODE}):`,
+          ALL_PRODUCT_IDS);
+        const raw = await boundedNativeCall(
+          RNIap.getSubscriptions({ skus: ALL_PRODUCT_IDS }),
+          bound,
+          'E_FETCH_TIMEOUT',
+          'getSubscriptions()',
+        );
+        const list = Array.isArray(raw) ? raw : [];
+        const rawIds = list.map((p) => p && p.productId).filter(Boolean);
+        lastFetchedProductIds = rawIds;
+
+        if (rawIds.length === 0) {
+          // "empty-from-store" = StoreKit DID answer, it just has no product for
+          // any requested ID. That is the ASC-side signature. Retry anyway —
+          // cheap, and a transient empty answer right after launch is common.
+          lastFetchResult = {
+            at: Date.now(),
+            ms: Date.now() - startedAt,
+            ok: false,
+            stage: 'empty-from-store',
+            rawCount: list.length,
+            fetchedIds: rawIds,
+            attempts,
+          };
+          lastError = null;
+          if (attempt < maxAttempts) continue;
+          console.warn('[IAP] StoreKit answered with 0 products for every requested ID');
+          return [];
+        }
+
+        lastFetchResult = {
+          at: Date.now(),
+          ms: Date.now() - startedAt,
+          ok: true,
+          stage: 'ok',
+          rawCount: list.length,
+          fetchedIds: rawIds,
+          attempts,
+        };
+        console.log(`[IAP] Products loaded: ${list.length} raw item(s), ${rawIds.length} with a productId`);
+
+        // Normalize product data for UI
+        return list.map((product) => ({
+        productId: product.productId,
+        title: product.title,
+        description: product.description,
+        price: product.price,           // Localized price string (e.g. "$6.99")
+        localizedPrice: product.localizedPrice,
+        currency: product.currency,
+        // priceValue: numeric price used for sorting / trial-period math.
+        // product.price is a LOCALIZED string ("$6.99", "¥38.00") and parseFloat
+        // returns NaN on iOS. Prefer the canonical micro-amount field when present
+        // (iOS/Android both expose it), and fall back to a sanitized parse of the
+        // localized string so dev/legacy callers still get a usable number.
+        priceValue: (typeof product.priceAmountMicros === 'number'
+          ? product.priceAmountMicros / 1000000
+          : parseFloat(String(product.price || '').replace(/[^0-9.]/g, ''))
+        ) || 0,
+        // iOS-specific subscription period info
+        subscriptionPeriodNumberIOS: product.subscriptionPeriodNumberIOS,
+        subscriptionPeriodUnitIOS: product.subscriptionPeriodUnitIOS,
+        introductoryPriceIOS: product.introductoryPriceIOS,
+        }));
+      } catch (error) {
+        lastError = error;
+        console.warn(`[IAP] Fetch attempt ${attempt}/${maxAttempts} failed:`,
+          error?.code, error?.message);
+        if (attempt < maxAttempts) continue;
+      }
     }
+
+    // Every attempt failed with a real error. NOTE (StoreKit 2): the error here
+    // is a genuine Apple error surfaced by `try await Product.products(for:)`,
+    // not the StoreKit-1 "promise never settles" black hole.
+    lastFetchResult = {
+      at: Date.now(),
+      ms: Date.now() - startedAt,
+      ok: false,
+      stage: 'native-error',
+      rawCount: 0,
+      fetchedIds: [],
+      attempts,
+      error: {
+        code: lastError?.code || 'E_FETCH_UNKNOWN',
+        message: lastError?.message || String(lastError),
+      },
+    };
+    console.error(`[IAP] Failed to fetch products after ${attempts} attempt(s):`, lastError);
+    return [];
   })();
 
-  return inflightFetch;
+  try {
+    return await inflightFetch;
+  } finally {
+    inflightFetch = null;
+  }
 }
 
 /**
@@ -464,62 +582,97 @@ export async function purchaseSubscription(productId) {
       }
     }
 
-    // 2) For iOS StoreKit 1/2: MUST call getSubscriptions() (fetchProducts) BEFORE
-    //    requestSubscription, otherwise sheet is empty / never appears.
+    // 2) Warm the native product cache. BOTH StoreKit paths need this before a
+    //    purchase can start — Sk1 looks the SKU up in `validProducts`, Sk2 in
+    //    `productStore`, and neither will open a sheet for an unknown SKU.
+    //
+    //    A failed fetch is NO LONGER a hard stop (that was the "第一次购买直接报
+    //    NO_PRODUCTS，Apple 支付面板根本没弹出" bug). We retry once and, if we still
+    //    have no product list, we ATTEMPT the purchase anyway with the candidate
+    //    SKUs. Every outcome is then readable:
+    //      • the native store happened to be warm → Apple sheet opens ✅
+    //      • the store really is cold → the native layer rejects with a specific
+    //        error (E_DEVELOPER_ERROR / "Invalid product ID"), which we surface
+    //        instead of a self-invented NO_PRODUCTS message.
     console.log('[IAP]   Step 2: fetchProducts (getSubscriptions) to warm StoreKit cache...');
-    const products = await fetchProducts();
+    let products = await fetchProducts();
+    if (products.length === 0) {
+      console.warn('[IAP]   ⚠️  First fetch returned 0 — retrying once before attempting purchase...');
+      products = await fetchProducts({ retries: 1, timeoutMs: FETCH_RETRY_TIMEOUT_MS });
+    }
     console.log(`[IAP]   → Fetched ${products.length} product(s) from App Store:`,
       products.map(p => `${p.productId} (${p.localizedPrice || p.price})`));
 
-    if (products.length === 0) {
+    // 3) Resolve which SKU to buy.
+    //    Match exactly first, then fall back to a `.v2`-normalized match so a
+    //    caller passing the canonical ID still resolves when ASC only has the
+    //    .v2 SKU.
+    const matched =
+      products.find((p) => p.productId === productId) ||
+      products.find((p) => baseProductId(p.productId) === baseProductId(productId));
+
+    const candidates = [];
+    if (matched) candidates.push(matched.productId);
+    if (productId && !candidates.includes(productId)) candidates.push(productId);
+    const v2Sku = `${baseProductId(productId)}.v2`;
+    if (!candidates.includes(v2Sku)) candidates.push(v2Sku);
+
+    if (!matched) {
       const lf = lastFetchResult || {};
       const cause = lf.error
         ? `${lf.error.code}: ${lf.error.message}`
         : `App Store answered but returned 0 products (raw=${lf.rawCount ?? 0}, stage=${lf.stage || 'unknown'})`;
-      console.warn('[IAP]   ⚠️  No products returned! stage =', lf.stage, '| cause =', cause);
-      console.warn('[IAP]     • stage=empty-from-store → 商品对当前 App 不可见（ASC 侧配置）');
-      console.warn('[IAP]     • stage=native-error / E_FETCH_TIMEOUT → StoreKit 无响应或报错（设备/网络/库侧）');
-      throw new Error(
-        `NO_PRODUCTS: ${cause}. `
-        + `Requested ${ALL_PRODUCT_IDS.length} IDs: ${ALL_PRODUCT_IDS.join(', ')}`
-      );
-    }
-
-    // 3) Verify the requested productId was actually returned.
-    //    Match exactly first, then fall back to a `.v2`-normalized match so a
-    //    caller passing the canonical ID still resolves when ASC only has the
-    //    .v2 SKU. We then purchase the SKU StoreKit actually knows about.
-    const matched =
-      products.find((p) => p.productId === productId) ||
-      products.find((p) => baseProductId(p.productId) === baseProductId(productId));
-    if (!matched) {
-      console.warn(`[IAP]   ❌ Requested productId "${productId}" NOT in fetched list. `
-        + `Available: [${products.map(p=>p.productId).join(', ')}]`);
-      throw new Error(
-        `PRODUCT_NOT_FOUND: "${productId}" was not returned by App Store. `
-        + `Available: ${products.map(p=>p.productId).join(', ')}. `
-        + `Check App Store Connect "Cleared for Sale" = YES.`
-      );
-    }
-    // Always buy the real SKU returned by StoreKit, never the canonical guess.
-    const realSku = matched.productId;
-    if (realSku !== productId) {
-      console.log(`[IAP]   ℹ️  Using StoreKit SKU "${realSku}" (requested "${productId}")`);
-    }
-    console.log(`[IAP]   ✅ Matched product: ${realSku} — price: ${matched.localizedPrice || matched.price}`);
-
-    // 4) Trigger StoreKit payment sheet
-    //    react-native-iap v12 iOS: use { sku: string } for single subscription.
-    //    For iOS NO subscriptionOffers needed (that's Android / introductory offers).
-    console.log('[IAP]   Step 4: Calling RNIap.requestSubscription({ sku })...');
-
-    if (Platform.OS === 'ios') {
-      await RNIap.requestSubscription({ sku: realSku });
+      console.warn('[IAP]   ⚠️  No product matched the request. stage =', lf.stage, '| cause =', cause);
+      console.warn('[IAP]     • stage=empty-from-store → 商品对当前 App 不可见（ASC 侧：Cleared for Sale / 付费协议 / 商品归属）');
+      console.warn('[IAP]     • stage=native-error / E_FETCH_TIMEOUT → StoreKit 报错或超时（设备/账号/网络）');
+      console.warn('[IAP]     → Attempting purchase anyway with candidate SKUs:', candidates.join(', '));
     } else {
-      await RNIap.requestSubscription({
-        sku: realSku,
-        subscriptionOffers: [{ sku: realSku, offerToken: '' }],
-      });
+      console.log(`[IAP]   ✅ Matched product: ${matched.productId} — price: ${matched.localizedPrice || matched.price}`);
+      if (matched.productId !== productId) {
+        console.log(`[IAP]   ℹ️  Using StoreKit SKU "${matched.productId}" (requested "${productId}")`);
+      }
+    }
+
+    // 4) Trigger the StoreKit payment sheet. Try the candidates in order of
+    //    likelihood; the first SKU StoreKit accepts is the one we keep. A
+    //    rejection means "this SKU is not in the native cache" → try the next.
+    //    react-native-iap v12 iOS: { sku } for a single subscription.
+    console.log('[IAP]   Step 4: Calling RNIap.requestSubscription({ sku })...');
+    let lastError = null;
+    for (const sku of candidates) {
+      try {
+        if (Platform.OS === 'ios') {
+          await RNIap.requestSubscription({ sku });
+        } else {
+          await RNIap.requestSubscription({
+            sku,
+            subscriptionOffers: [{ sku, offerToken: '' }],
+          });
+        }
+        lastError = null;
+        break;
+      } catch (e) {
+        lastError = e;
+        // User cancelled → propagate immediately; do not retry other SKUs.
+        if (e?.code === 'E_USER_CANCELED') throw e;
+        console.warn(`[IAP]   requestSubscription("${sku}") rejected:`, e?.code, e?.message);
+      }
+    }
+    if (lastError) {
+      // Every candidate failed — this is the ASC / product-configuration case.
+      // Include the fetch evidence so the on-screen alert is actionable.
+      const lf = lastFetchResult || {};
+      const fetchCause = lf.error
+        ? `${lf.error.code}: ${lf.error.message}`
+        : `store returned ${lf.rawCount ?? 0} raw item(s), stage=${lf.stage || 'unknown'}`;
+      const err = new Error(
+        `PRODUCT_NOT_FOUND: ${lastError.code || 'E_UNKNOWN'}: ${lastError.message} `
+        + `| 商品拉取: ${fetchCause} `
+        + `| 已尝试 SKU: ${candidates.join(', ')} `
+        + `| StoreKit 模式: ${IAP_STOREKIT_MODE}`
+      );
+      err.code = lastError.code || 'PRODUCT_NOT_FOUND';
+      throw err;
     }
 
     console.log('[IAP]   requestSubscription Promise resolved — awaiting user action via listener...');
@@ -530,9 +683,131 @@ export async function purchaseSubscription(productId) {
     console.error('[IAP]   message:', error.message);
     console.error('[IAP]   stack  :', error.stack ? error.stack.split('\n').slice(0, 3).join('\n') : '(no stack)');
 
+    // A "failure" here often just means "you already own this subscription"
+    // (or the transaction was already delivered in an earlier session). Ask
+    // StoreKit what the user actually owns before reporting a hard failure —
+    // that is what turns "第二次购买提示已订阅，但 App 仍显示升级到 Pro" into a
+    // real Pro unlock.
+    if (error.code !== 'E_USER_CANCELED') {
+      try { await syncEntitlement('purchase-failed'); } catch (e) { /* non-fatal */ }
+    }
+
     if (onPurchaseErrorCallback) onPurchaseErrorCallback(error);
     throw error;
   }
+}
+
+// ============================================================
+// 4a. Entitlement reconciliation
+// ============================================================
+// One shared question drives three on-device symptoms:
+//   1. after a purchase the paywall did not close / Pro stayed locked
+//   2. tapping 订阅 again showed Apple's "你目前已订阅此项"
+//   3. relaunching still showed 升级到 Pro although the subscription exists
+// ...all three are "the app never asked StoreKit what the user owns".
+//
+// StoreKit 2 gives us a safe way to ask: `getAvailableItems(onlyIncludeActiveItems:
+// true)` reads `Transaction.currentEntitlements` — a LOCAL query, no sign-in
+// prompt, no restore sheet. (On StoreKit 1 the same call ends up in
+// `restoreCompletedTransactions()`, which on iOS 26 is the call that could throw
+// a native exception at launch — hence the old "never call it at launch" rule.)
+//
+// IMPORTANT Sk2 detail: auto-renewable entitlements are filtered against the
+// NATIVE product cache (`productStore`), which is only filled by a successful
+// getItems(). So we warm the cache first; without it currentEntitlements can
+// legitimately come back empty for a subscription the user really owns.
+let lastEntitlementResult = null;
+
+const ENTITLEMENT_TIMEOUT_MS = 10000;
+
+/**
+ * Reconcile local Pro state with what StoreKit says the user owns.
+ * @param {string} reason - label for diagnostics ('launch' | 'paywall' | 'restore' | ...)
+ * @returns {Promise<object|null>} the entitlement purchase found, or null
+ */
+export async function syncEntitlement(reason = 'manual') {
+  loadRNIapModule();
+  if (!RNIap || IS_RNIAP_STUB) {
+    lastEntitlementResult = { at: Date.now(), reason, ok: false, stage: 'no-module', mode: IAP_STOREKIT_MODE };
+    return null;
+  }
+
+  if (!isInitialized) {
+    try { await initIAP(); } catch (e) { /* recorded below */ }
+  }
+
+  // Warm the native product cache (see the Sk2 note above). Best-effort.
+  try { await fetchProducts({ retries: 0, timeoutMs: FETCH_RETRY_TIMEOUT_MS }); } catch (e) { /* ignore */ }
+
+  const checks = [];
+  if (typeof RNIap.getAvailablePurchases === 'function') {
+    checks.push({
+      label: 'getAvailablePurchases',
+      // onlyIncludeActiveItems: Sk2 → currentEntitlements (unexpired only).
+      // Sk1 ignores the option and returns unfinished transactions.
+      call: () => RNIap.getAvailablePurchases({ onlyIncludeActiveItems: true }),
+    });
+  }
+  if (typeof RNIap.getPurchaseHistory === 'function') {
+    checks.push({
+      label: 'getPurchaseHistory',
+      call: () => RNIap.getPurchaseHistory({ onlyIncludeActiveItems: false }),
+    });
+  }
+
+  let lastError = null;
+  for (const check of checks) {
+    try {
+      const raw = await boundedNativeCall(
+        check.call(),
+        ENTITLEMENT_TIMEOUT_MS,
+        'E_ENTITLEMENT_TIMEOUT',
+        `${check.label}()`,
+      );
+      const list = Array.isArray(raw) ? raw : [];
+      const subs = list.filter(
+        (p) => p && (isMonthlyProduct(p.productId) || isAnnualProduct(p.productId))
+      );
+      if (subs.length === 0) {
+        console.log(`[IAP] Entitlement check (${check.label}, ${reason}): no subscription found`);
+        continue;
+      }
+      subs.sort((a, b) => (b.transactionDate || 0) - (a.transactionDate || 0));
+      const best = subs[0];
+      console.log(`[IAP] ✅ Entitlement found via ${check.label} (${reason}):`, best.productId);
+
+      await cacheReceipt(best);
+      if (onPurchaseSuccessCallback) {
+        await onPurchaseSuccessCallback({
+          productId: best.productId,
+          receipt: best.transactionReceipt,
+          purchaseDate: best.transactionDate || Date.now(),
+        });
+      }
+      lastEntitlementResult = {
+        at: Date.now(), reason, ok: true, stage: 'found', mode: IAP_STOREKIT_MODE,
+        via: check.label, productId: best.productId, count: subs.length,
+      };
+      return best;
+    } catch (e) {
+      lastError = e;
+      console.warn(`[IAP] Entitlement check (${check.label}, ${reason}) failed:`, e?.code, e?.message);
+    }
+  }
+
+  lastEntitlementResult = {
+    at: Date.now(), reason, ok: false, mode: IAP_STOREKIT_MODE,
+    stage: lastError ? 'native-error' : 'no-entitlement',
+    error: lastError ? { code: lastError.code, message: lastError.message } : null,
+  };
+  return null;
+}
+
+/**
+ * Snapshot of the last entitlement reconciliation (for diagnostics).
+ */
+export function getLastEntitlementResult() {
+  return lastEntitlementResult ? { ...lastEntitlementResult } : null;
 }
 
 // ============================================================
@@ -581,6 +856,12 @@ async function handleSuccessfulPurchase(purchase) {
 
     // Acknowledge the purchase (required on Android, good practice on iOS).
     await acknowledgePurchase(purchase);
+
+    // Reconcile once more. This normalizes the stored product id to the SKU
+    // StoreKit actually knows (base vs `.v2`) so a later currentEntitlements
+    // lookup can always match it, and it covers the "listener fired but the
+    // success callback above threw" case.
+    try { await syncEntitlement('purchase-success'); } catch (e) { /* non-fatal */ }
   } catch (error) {
     console.error('[IAP] Handle purchase error:', error);
 
@@ -775,56 +1056,30 @@ export async function restorePurchases() {
       await initIAP();
     }
 
-    // Get available purchases (non-consumed) from device
-    const purchases = await RNIap.getAvailablePurchases();
-    console.log('[IAP] Available purchases:', purchases.length);
-
-    // Also get purchase history
-    const history = await RNIap.getPurchaseHistory();
-    console.log('[IAP] Purchase history:', history.length);
-
-    // Find the most recent valid subscription
-    const subscriptionPurchases = [
-      ...purchases,
-      ...history,
-    ].filter(
-      (p) =>
-        isMonthlyProduct(p.productId) || isAnnualProduct(p.productId)
-    );
-
-    if (subscriptionPurchases.length === 0) {
-      console.log('[IAP] No subscriptions found to restore');
-      return false;
-    }
-
-    // Sort by date descending (most recent first)
-    subscriptionPurchases.sort(
-      (a, b) => (b.transactionDate || 0) - (a.transactionDate || 0)
-    );
-
-    const mostRecent = subscriptionPurchases[0];
-    console.log('[IAP] Most recent subscription:', mostRecent.productId);
-
-    // Validate and unlock
-    const isValid = await validateReceipt(mostRecent);
-
-    if (isValid) {
-      await cacheReceipt(mostRecent);
-
-      if (onPurchaseSuccessCallback) {
-        await onPurchaseSuccessCallback({
-          productId: mostRecent.productId,
-          receipt: mostRecent.transactionReceipt,
-          purchaseDate: mostRecent.transactionDate || Date.now(),
-        });
-      }
-
-      await acknowledgePurchase(mostRecent);
-      console.log('[IAP] Purchase restored successfully');
+    // Everything (which native API to call, which entitlement to prefer, caching
+    // and unlocking Pro) now lives in syncEntitlement(). Two reasons we no
+    // longer do it inline here:
+    //
+    //  1. `validateReceipt()` used to GATE the unlock. For an auto-renewable
+    //     subscription Apple's verifyReceipt requires the app's shared secret
+    //     (`password`); this build embeds none, so Apple answers 21003 (≠ 0)
+    //     → validateReceipt() false → "No active subscription found to restore"
+    //     even for a user who genuinely IS subscribed. For a client-only app
+    //     StoreKit's own answer (an unexpired transaction in
+    //     `Transaction.currentEntitlements`) is authoritative, so we trust that
+    //     and keep verifyReceipt purely informational.
+    //
+    //  2. On StoreKit 2 the products must be warm in the NATIVE cache before
+    //     currentEntitlements reports auto-renewable entitlements —
+    //     syncEntitlement() handles that ordering.
+    const found = await syncEntitlement('restore');
+    if (found) {
+      await acknowledgePurchase(found);
+      console.log('[IAP] Purchase restored successfully:', found.productId);
       return true;
     }
 
-    console.warn('[IAP] Restored receipt was invalid');
+    console.warn('[IAP] No active subscription found to restore');
     return false;
   } catch (error) {
     console.error('[IAP] Restore failed:', error);
@@ -993,7 +1248,19 @@ export function getIAPDiagnostics() {
     // Raw outcome of the last native fetch: distinguishes
     // "StoreKit answered empty" from "StoreKit errored" from "never settled".
     lastFetch: lastFetchResult ? { ...lastFetchResult } : null,
+    // 'sk2' = StoreKit 2 in use (real errors, no silent hang), 'sk1' = fallback.
+    storekitMode: IAP_STOREKIT_MODE,
+    setupError: IAP_SETUP_ERROR,
+    // Result of the last "what does the user actually own?" reconciliation.
+    lastEntitlement: lastEntitlementResult ? { ...lastEntitlementResult } : null,
     isStub: IS_RNIAP_STUB,
     isInitialized,
   };
+}
+
+/**
+ * Snapshot of the StoreKit mode only (cheap — never loads the native module).
+ */
+export function getStoreKitMode() {
+  return { mode: IAP_STOREKIT_MODE, setupError: IAP_SETUP_ERROR };
 }

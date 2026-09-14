@@ -223,6 +223,29 @@ export async function collectDiagnostics() {
       : `失败 (${iap.stage || iap.reason || 'unknown'})`,
     status: iap.ok ? 'ok' : 'fail',
   });
+  report.push({
+    label: 'StoreKit 模式',
+    value: d.storekitMode === 'sk2'
+      ? 'StoreKit 2（HYBRID · 真实报错，不再哑挂起）'
+      : d.storekitMode === 'sk1'
+        ? 'StoreKit 1（兼容性回退）'
+        : (d.storekitMode || 'unknown'),
+    status: d.storekitMode === 'sk2' ? 'ok' : (d.storekitMode === 'sk1' ? 'warn' : 'info'),
+  });
+  if (d.setupError) {
+    report.push({ label: 'StoreKit 初始化错误', value: String(d.setupError), status: 'fail' });
+  }
+  const le = d.lastEntitlement;
+  report.push({
+    label: '权益探测（实拥订阅）',
+    value: le
+      ? `${le.ok ? '已找到' : '未找到'} · stage=${le.stage || '?'}`
+        + (le.productId ? ` · productId=${le.productId}` : '')
+        + (le.via ? ` · via=${le.via}` : '')
+        + (le.reason ? ` · ${le.reason}` : '')
+      : '尚未运行（启动/购买/恢复时触发）',
+    status: le ? (le.ok ? 'ok' : 'info') : 'info',
+  });
 
   // Voice
   section('诊断 · 语音识别（服务器）');

@@ -28,6 +28,9 @@ import {
   resolveProductId,
   isMonthlyProduct,
   isAnnualProduct,
+  syncEntitlement,
+  getLastEntitlementResult,
+  getStoreKitMode,
 } from '../services/IAPService';
 
 // ---- Constants ----
@@ -353,6 +356,29 @@ export async function initIAPIntegration() {
     // Initialize IAP connection
     await initIAP();
     console.log('[Subscription] IAP integration initialized');
+
+    // Reconcile once, silently, the first time the app touches StoreKit.
+    //
+    // Rationale: the Pro flag lives in AsyncStorage and used to be written ONLY
+    // by the purchase listener. So a subscription bought earlier — on another
+    // device, before a reinstall, or in a session where the unlock failed — left
+    // the user staring at "升级到 Pro" while Apple already had their money.
+    // Asking StoreKit what they own fixes that at the source.
+    //
+    // Guarded to StoreKit 2 on purpose: on Sk2 this reads
+    // `Transaction.currentEntitlements` (local query, no prompt, no sheet). On
+    // Sk1 the same call goes through `restoreCompletedTransactions()`, which is
+    // the call that can throw a native exception on iOS 26 — so we never fire it
+    // unprompted there.
+    try {
+      if (getStoreKitMode().mode === 'sk2') {
+        const found = await syncEntitlement('init');
+        console.log('[Subscription] Entitlement reconciliation on init:',
+          found ? found.productId : 'none found');
+      }
+    } catch (e) {
+      console.warn('[Subscription] Entitlement reconciliation failed (ignored):', e?.message || e);
+    }
   } catch (error) {
     console.error('[Subscription] IAP init failed:', error);
   }
@@ -492,21 +518,65 @@ export async function restoreProPurchase() {
  */
 export async function verifySubscriptionOnLaunch() {
   try {
-    // Check if Pro is already set
     const status = await getSubscriptionStatus();
-    if (status === 'pro') {
-      // Verify the cached receipt is still valid
-      const cached = await getCachedReceipt();
-      if (!cached) {
-        // No cached receipt — might have been cleared, downgrade to free
-        console.warn('[Subscription] Pro status but no cached receipt — downgrading');
-        await saveSubscriptionStatus('free');
-        return;
-      }
+    if (status !== 'pro') return;
+
+    // "Pro but no cached receipt" must NOT silently downgrade the user. The
+    // receipt cache can legitimately be empty (reinstall, cleared storage,
+    // AsyncStorage hiccup) while the subscription itself is perfectly valid —
+    // the old code turned that into an instant downgrade to free.
+    // Ask StoreKit instead, and only downgrade on a POSITIVE "owns nothing"
+    // answer — never on a native/network error.
+    const cached = await getCachedReceipt();
+    if (cached) {
       console.log('[Subscription] Pro status verified with cached receipt');
+      return;
+    }
+
+    console.warn('[Subscription] Pro status without a cached receipt — asking StoreKit…');
+    const found = await syncEntitlement('verify-on-launch');
+    if (found) {
+      console.log('[Subscription] Pro status verified against StoreKit:', found.productId);
+      return;
+    }
+
+    const last = getLastEntitlementResult();
+    if (last && last.stage === 'no-entitlement') {
+      console.warn('[Subscription] StoreKit reports no entitlement — downgrading to free');
+      await saveSubscriptionStatus('free');
+    } else {
+      console.warn('[Subscription] Entitlement check inconclusive — keeping Pro:', last?.stage);
     }
   } catch (error) {
     console.error('[Subscription] Verify on launch failed:', error);
+  }
+}
+
+/**
+ * Reconcile Pro state with StoreKit. Safe to call when the paywall opens or
+ * after a failed purchase — it will not prompt the user on StoreKit 2.
+ * @param {string} reason - diagnostics label
+ * @returns {Promise<boolean>} true if the user currently owns a subscription
+ */
+export async function syncProEntitlement(reason = 'paywall') {
+  try {
+    if (!isIAPAvailable()) return await isProUser();
+    // On StoreKit 1, getAvailablePurchases() calls restoreCompletedTransactions(),
+    // which pops an Apple-ID login sheet. A passive reconcile (paywall focus) must
+    // never do that, so only run the native reconciliation on StoreKit 2 — where
+    // it reads Transaction.currentEntitlements locally with no prompt. On Sk1 we
+    // keep the locally-stored status (the purchase/restore flows handle Sk1).
+    const mode = getStoreKitMode().mode;
+    if (mode === 'sk2') {
+      const found = await syncEntitlement(reason);
+      if (found) return true;
+    }
+    // No entitlement found (or Sk1 / the check errored) — fall back to whatever
+    // we already had locally rather than downgrading the user.
+    return await isProUser();
+  } catch (e) {
+    console.error('[Subscription] syncProEntitlement failed:', e);
+    return await isProUser();
   }
 }
 

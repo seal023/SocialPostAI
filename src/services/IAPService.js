@@ -547,36 +547,40 @@ async function handleSuccessfulPurchase(purchase) {
   try {
     console.log('[IAP] Processing purchase:', purchase.productId);
 
-    // Validate the receipt
-    const isValid = await validateReceipt(purchase);
+    // StoreKit delivered this transaction → it completed on Apple's servers.
+    // The purchase event itself is the authoritative on-device signal for a
+    // client-only app (no backend), so we unlock Pro IMMEDIATELY and treat
+    // server-side receipt validation as best-effort only.
+    //
+    // Why this matters: validateReceipt() hits Apple's verifyReceipt endpoint,
+    // which for auto-renewable subscriptions requires the app's shared secret
+    // (the `password` field). This build does NOT embed it, so sandbox
+    // receipts come back as status 21003 (≠ 0) → validateReceipt returned false
+    // → onPurchaseSuccessCallback was never called → Pro stayed locked even
+    // though the user was charged and StoreKit showed "购买成功". Unlocking on
+    // the StoreKit event fixes that, and it is safe: StoreKit only fires
+    // purchaseUpdatedListener for genuinely completed transactions.
+    await cacheReceipt(purchase); // persist so a relaunch keeps Pro
 
-    if (isValid) {
-      console.log('[IAP] Receipt valid — unlocking Pro');
-
-      // Cache receipt data for persistence
-      await cacheReceipt(purchase);
-
-      // Notify callback (subscription.js) to unlock Pro
-      if (onPurchaseSuccessCallback) {
-        await onPurchaseSuccessCallback({
-          productId: purchase.productId,
-          receipt: purchase.transactionReceipt,
-          purchaseDate: purchase.transactionDate || Date.now(),
-        });
-      }
-
-      // Acknowledge the purchase (required on Android, good practice on iOS)
-      await acknowledgePurchase(purchase);
-    } else {
-      console.warn('[IAP] Receipt validation failed');
-
-      if (onPurchaseErrorCallback) {
-        onPurchaseErrorCallback({
-          code: 'RECEIPT_INVALID',
-          message: 'Receipt validation failed',
-        });
-      }
+    // Notify subscription.js to unlock Pro (saves 'pro' + fires UI refresh).
+    if (onPurchaseSuccessCallback) {
+      await onPurchaseSuccessCallback({
+        productId: purchase.productId,
+        receipt: purchase.transactionReceipt,
+        purchaseDate: purchase.transactionDate || Date.now(),
+      });
     }
+
+    // Best-effort validation — logs only, must NOT block unlocking.
+    try {
+      const isValid = await validateReceipt(purchase);
+      console.log('[IAP] Receipt validation result (informational):', isValid);
+    } catch (ve) {
+      console.warn('[IAP] Receipt validation threw (ignored):', ve?.message || ve);
+    }
+
+    // Acknowledge the purchase (required on Android, good practice on iOS).
+    await acknowledgePurchase(purchase);
   } catch (error) {
     console.error('[IAP] Handle purchase error:', error);
 

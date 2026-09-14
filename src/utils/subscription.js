@@ -32,6 +32,37 @@ import {
 
 // ---- Constants ----
 
+// ============================================================
+// Reactive subscription change notifications
+// ------------------------------------------------------------
+// Screens hold their own local `subscriptionState`, so they never re-render
+// when Pro is unlocked mid-session (e.g. right after a purchase). A tiny
+// listener set lets the purchase/restore success path push the new state to
+// every interested screen at once — closing the paywall, showing the welcome
+// alert, and unlocking Pro features live.
+// ============================================================
+const subscriptionListeners = new Set();
+
+/**
+ * Subscribe to subscription-state changes (purchase / restore / sign-out).
+ * @param {(state: object) => void} listener
+ * @returns {() => void} unsubscribe function
+ */
+export function subscribeSubscription(listener) {
+  subscriptionListeners.add(listener);
+  return () => subscriptionListeners.delete(listener);
+}
+
+function notifySubscriptionChanged() {
+  getSubscriptionState()
+    .then((state) => {
+      subscriptionListeners.forEach((l) => {
+        try { l(state); } catch (e) { console.error('[Subscription] listener error', e); }
+      });
+    })
+    .catch((e) => console.error('[Subscription] notify failed', e));
+}
+
 const TRIAL_DAYS = 7;
 const FREE_DAILY_LIMIT = 3;
 
@@ -309,6 +340,9 @@ export async function initIAPIntegration() {
         await saveSubscriptionStatus('pro');
         await saveUserProfile({ isPro: true, purchaseDate: purchaseData.purchaseDate });
         console.log('[Subscription] Pro unlocked via IAP');
+        // Push the new state to every subscribed screen so the paywall closes
+        // and Pro features unlock immediately (no fragile setTimeout poll).
+        notifySubscriptionChanged();
       },
       // On purchase error — log only
       (error) => {
@@ -431,6 +465,8 @@ export async function restoreProPurchase() {
 
     if (restored) {
       // Verify cached receipt on next state load
+      // Push the new state to subscribed screens (the paywall closes, Pro unlocks).
+      notifySubscriptionChanged();
       return {
         success: true,
         message: 'Subscription restored successfully',

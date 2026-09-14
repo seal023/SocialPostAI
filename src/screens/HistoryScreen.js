@@ -35,14 +35,15 @@ export default function HistoryScreen({ themeName = 'pink' }) {
   const theme = getTheme(themeName);
   const { t } = useLanguage();
 
-  // Filter tab definitions — platform names stay as-is, "All" is translated
+  // Filter tab definitions — all labels go through i18n so the Chinese UI
+  // shows 全部/短视频/图片/社群/短文字/专业 instead of English platform names.
   const FILTER_TABS = [
     { id: 'all', label: t('all') },
-    { id: 'tiktok', label: 'Viral' },
-    { id: 'instagram', label: 'Visual' },
-    { id: 'facebook', label: 'Community' },
-    { id: 'twitter', label: 'Brief' },
-    { id: 'linkedin', label: 'Professional' },
+    { id: 'tiktok', label: t('filter_viral') },
+    { id: 'instagram', label: t('filter_visual') },
+    { id: 'facebook', label: t('filter_community') },
+    { id: 'twitter', label: t('filter_brief') },
+    { id: 'linkedin', label: t('filter_professional') },
   ];
 
   // State

@@ -80,6 +80,11 @@ const en = {
   search_history: 'Search history...',
   clear: 'Clear',
   all: 'All',
+  filter_viral: 'Short Video',
+  filter_visual: 'Image',
+  filter_community: 'Community',
+  filter_brief: 'Short Text',
+  filter_professional: 'Professional',
   no_history: 'No history yet',
   select_all: 'Select All',
   deselect_all: 'Deselect All',
@@ -209,6 +214,7 @@ const en = {
   contact_desc: 'Email: seal023@163.com',
   rate_thanks: 'Thanks! ❤️',
   rate_desc: 'Your rating powers our progress!',
+  rate_store_unavailable: 'Could not open the App Store rating page (available after release).',
   favorites_count: 'You have {count} favorited copies',
 
   // Common
@@ -255,6 +261,7 @@ const en = {
 
   // Scene info
   scene_info: 'Scene Info',
+  scene_info_hint: 'Add scene info to make copy more precise',
   location_auto: '{city} (Auto)',
   location_manual_placeholder: 'Location unavailable, enter manually',
   location_input_placeholder: 'Enter location (e.g. Shanghai, New York)',

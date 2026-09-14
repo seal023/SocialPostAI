@@ -80,6 +80,11 @@ const zh = {
   search_history: '搜索历史记录...',
   clear: '清空',
   all: '全部',
+  filter_viral: '短视频',
+  filter_visual: '图片',
+  filter_community: '社群',
+  filter_brief: '短文字',
+  filter_professional: '专业',
   no_history: '暂无历史记录',
   select_all: '全选',
   deselect_all: '取消全选',
@@ -209,6 +214,7 @@ const zh = {
   contact_desc: '邮箱：seal023@163.com',
   rate_thanks: '谢谢！❤️',
   rate_desc: '您的评分是我们进步的动力！',
+  rate_store_unavailable: '暂无法打开 App Store 评分页（上架后可用）。',
   favorites_count: '您有 {count} 条收藏文案',
 
   // Common
@@ -255,6 +261,7 @@ const zh = {
 
   // Scene info
   scene_info: '场景信息',
+  scene_info_hint: '添加场景信息，让文案更精准',
   location_auto: '{city}（自动定位）',
   location_manual_placeholder: '未获取位置，请手动输入',
   location_input_placeholder: '输入地点（如：上海、纽约）',

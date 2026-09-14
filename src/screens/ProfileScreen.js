@@ -35,6 +35,7 @@ import {
   restoreProPurchase,
   resetDailyUsage,
   resetTrialForTesting,
+  subscribeSubscription,
   PRODUCT_IDS,
 } from '../utils/subscription';
 import { baseProductId } from '../services/IAPService';
@@ -50,6 +51,13 @@ import { BackgroundDecorator, CornerBrackets, getCardStyle, getStatusBarStyle } 
 // Privacy & Terms URLs
 const PRIVACY_URL = 'https://seal023.github.io/privacy-policy/';
 const TERMS_URL = 'https://seal023.github.io/terms-of-service/';
+
+// App Store product page + write-review deep link.
+// The numeric id equals the App Store Connect "Apple ID" (ascAppId 6799424230).
+// Once the app is live these open the App Store; on TestFlight (no public page
+// yet) the open fails and we fall back to an alert.
+const APP_STORE_URL = 'https://apps.apple.com/app/id6799424230';
+const APP_STORE_REVIEW_URL = 'https://apps.apple.com/app/id6799424230?action=write-review';
 
 // Pricing tiers — will be loaded dynamically from StoreKit via IAP
 // Fallback values used until products are fetched
@@ -128,6 +136,9 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
   const [appleUser, setAppleUser] = useState(null);
   const [permissions, setPermissions] = useState(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  // Guards the "欢迎 Pro" welcome alert so it shows at most once per session,
+  // even if the subscription event fires more than once (purchase + restore).
+  const proWelcomeShownRef = useRef(false);
 
   // Check Apple ID login status and permissions on mount
   useEffect(() => {
@@ -152,6 +163,23 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
       loadData();
     }, [])
   );
+
+  // Live subscription updates: when Pro is unlocked (purchase or restore),
+  // update our local state, close the paywall, and greet the user — without
+  // relying on the fragile 2-second setTimeout poll in handlePurchase.
+  useEffect(() => {
+    const unsub = subscribeSubscription((state) => {
+      setSubscriptionState(state);
+      if (state.status === 'pro') {
+        setShowSubscription(false); // auto-close paywall on success
+        if (!proWelcomeShownRef.current) {
+          proWelcomeShownRef.current = true;
+          Alert.alert('✅ ' + t('purchase_success_title'), t('purchase_success_desc'));
+        }
+      }
+    });
+    return unsub;
+  }, []);
 
   // 每一步独立 try-catch：任何一步失败只让对应 state 保持默认值，
   // 绝不冒泡成 unhandled rejection（iOS 26 + A18 Pro + Release 下会被
@@ -319,25 +347,32 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
         return;
       }
 
-      // Purchase request sent successfully — wait for callback
-      // The purchase result is handled asynchronously via IAPService callbacks
-      // Refresh subscription state after a short delay
-      setTimeout(async () => {
-        const newSubState = await getSubscriptionState();
-        setSubscriptionState(newSubState);
-
-        if (newSubState.status === 'pro') {
-          Alert.alert(
-            '✅ ' + t('purchase_success_title'),
-            t('purchase_success_desc'),
-          );
-        }
-      }, 2000);
+      // Purchase request sent — StoreKit shows the system sheet. The actual
+      // unlock happens in the IAPService purchaseUpdatedListener → subscription
+      // success callback, which now pushes the new state to us via
+      // subscribeSubscription (closes the paywall + shows the welcome alert).
+      // No setTimeout poll needed; the event drives the UI.
     } catch (error) {
       console.error('[ProfileScreen] Purchase error:', error);
       Alert.alert(t('purchase_failed_title'), t('purchase_failed_desc'));
     } finally {
       setIsPurchasing(false);
+    }
+  };
+
+  // ---- Rate the app (jump to App Store review page) ----
+  const handleRateApp = async () => {
+    const url = APP_STORE_REVIEW_URL;
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (supported) {
+        await Linking.openURL(url);
+      } else {
+        // Review deep link unsupported (e.g. TestFlight) → open the product page.
+        await Linking.openURL(APP_STORE_URL);
+      }
+    } catch (e) {
+      Alert.alert(t('rate_app'), t('rate_store_unavailable'));
     }
   };
 
@@ -352,19 +387,14 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
       const result = await restoreProPurchase();
       console.log('[ProfileScreen] restoreProPurchase result:', result);
 
-      Alert.alert(
-        result.success ? '✅ ' + t('restore_success_title') : t('restore_failed_title'),
-        result.message,
-        [{ text: 'OK', onPress: () => {
-          if (result.success) {
-            // Refresh subscription state
-            setTimeout(async () => {
-              const newSubState = await getSubscriptionState();
-              setSubscriptionState(newSubState);
-            }, 500);
-          }
-        }}]
-      );
+      if (!result.success) {
+        // No purchase to restore (or error) — tell the user; the subscription
+        // event only fires when an actual restored transaction is delivered.
+        Alert.alert(t('restore_failed_title'), result.message);
+      }
+      // On success, the purchaseUpdatedListener fires and pushes the new state
+      // via subscribeSubscription (closes paywall + welcome alert). No manual
+      // refresh needed.
     } catch (error) {
       console.error('[ProfileScreen] Restore error:', error);
       Alert.alert(t('restore_failed_title'), t('restore_failed_desc'));
@@ -842,7 +872,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
             item={{ id: 'rate', icon: '⭐', titleKey: 'rate_app' }}
             isLast={false}
             theme={theme}
-            onPress={() => Alert.alert(t('rate_thanks'), t('rate_desc'))}
+            onPress={handleRateApp}
             t={t}
           />
           <SettingRow
@@ -1100,12 +1130,14 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
         </View>
       </Modal>
 
-      {/* ===== Diagnostics Panel ===== */}
-      <DiagnosticsPanel
-        visible={showDiagnostics}
-        onClose={() => setShowDiagnostics(false)}
-        themeName={themeName}
-      />
+      {/* ===== Diagnostics Panel (dev/TestFlight only; hidden in production) ===== */}
+      {TEST_TOOLS_ENABLED && (
+        <DiagnosticsPanel
+          visible={showDiagnostics}
+          onClose={() => setShowDiagnostics(false)}
+          themeName={themeName}
+        />
+      )}
 
       {/* ===== Theme Style Picker Modal ===== */}
       <Modal

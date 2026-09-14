@@ -27,7 +27,7 @@ import { COLORS, SPACING, FONT_SIZE, RADIUS, SHADOWS, getTheme } from '../themes
 import { PLATFORMS, STYLES, VOICE_TYPES, generateFullResult } from '../utils/mockData';
 import { generateCopy, parseMultiPlatformResponse } from '../services/ModelAdapter';
 import { saveHistory, getHistory, toggleFavorite, updateHistory, getBrandVoiceSamples } from '../utils/storage';
-import { getSubscriptionState, incrementDailyUsage, getRemainingCount, getTrendingTopics, resetDailyUsage } from '../utils/subscription';
+import { getSubscriptionState, incrementDailyUsage, getRemainingCount, getTrendingTopics, resetDailyUsage, subscribeSubscription } from '../utils/subscription';
 import { getPermissions } from '../utils/permissions';
 import { TEST_TOOLS_ENABLED } from '../config/buildInfo';
 import { useLanguage } from '../context/LanguageContext';
@@ -82,6 +82,13 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
   useEffect(() => {
     setLocalOutputLang(outputLanguage);
   }, [outputLanguage]);
+
+  // Live subscription updates: when Pro is unlocked (purchase/restore), refresh
+  // the trial/free banner and quota immediately instead of waiting for remount.
+  useEffect(() => {
+    const unsub = subscribeSubscription((state) => setSubscriptionState(state));
+    return unsub;
+  }, []);
 
   // Button scale animation
   const buttonScale = useState(new Animated.Value(1))[0];
@@ -584,13 +591,18 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
         {/* ===== Scene Info — Collapsible ===== */}
         <View style={[styles.sceneSection, { marginBottom: SPACING.xxl }]}>
           <TouchableOpacity
-            style={styles.sceneHeader}
+            style={[styles.sceneHeader, { backgroundColor: theme.card, borderColor: theme.border, borderRadius: theme.borderRadius.md, borderWidth: 1, paddingVertical: SPACING.md, paddingHorizontal: SPACING.lg }]}
             onPress={() => setSceneExpanded(!sceneExpanded)}
             activeOpacity={0.7}
           >
-            <Text style={[styles.sceneTitle, { color: theme.primary }]}>
-              📍 {t('scene_info')}
-            </Text>
+            <View style={styles.sceneHeaderText}>
+              <Text style={[styles.sceneTitle, { color: theme.primary }]}>
+                📍 {t('scene_info')}
+              </Text>
+              <Text style={[styles.sceneHint, { color: theme.placeholder }]}>
+                {t('scene_info_hint')}
+              </Text>
+            </View>
             <Text style={[styles.sceneExpandIcon, { color: theme.placeholder }]}>
               {sceneExpanded ? '▲' : '▼'}
             </Text>
@@ -987,9 +999,7 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
                     >
                       <View style={styles.bvSampleCardHeader}>
                         <Text style={[styles.bvSampleIndex, { color: isActive ? theme.primary : theme.subtitle }]}>
-                          {VOICE_TYPES[i]
-                            ? `${VOICE_TYPES[i].emoji} ${t(VOICE_TYPES[i].i18nKey)}`
-                            : `#${i + 1}`}
+                          {`${t('sample')} ${i + 1}`}
                         </Text>
                         {/* Radio circle */}
                         <View style={[styles.bvSampleRadio, { borderColor: isActive ? theme.primary : theme.border, backgroundColor: isActive ? theme.primary : 'transparent' }]}>
@@ -1225,14 +1235,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  sceneHeaderText: {
+    flex: 1,
+    flexDirection: 'column',
+  },
   sceneTitle: {
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
+  sceneHint: {
+    fontSize: FONT_SIZE.xs,
+    marginTop: 2,
+  },
   sceneExpandIcon: {
     fontSize: FONT_SIZE.sm,
     fontWeight: '600',
+    marginLeft: SPACING.sm,
   },
   sceneContent: {
     marginTop: SPACING.sm,

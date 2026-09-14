@@ -238,22 +238,93 @@ function setupPurchaseListeners() {
 // 2. Product Information
 // ============================================================
 
+// ---- Native-fetch bookkeeping (diagnostics) ----
+//
+// Every failure used to collapse into "0 products", which made a screenshot
+// useless: we could not tell
+//   (a) "Apple answered: no such product for this app"   ← ASC-side problem
+//   (b) "StoreKit errored"                               ← environment problem
+//   (c) "the native call never came back"                ← library/race problem
+// apart from each other.
+//
+// (c) is REAL and bites on iOS. react-native-iap's StoreKit-1 productsRequest
+// handler (node_modules/react-native-iap/ios/RNIapIos.swift ->
+// `request(_:didFailWithError:)`) only rejects when the failing request is an
+// SKReceiptRefreshRequest. If an SKProductsRequest fails, NOTHING settles the
+// JS promise -> it hangs forever, which is exactly what
+// "IAP 拉取探针: 失败 (timeout)" was.
+//
+// So we (1) keep the raw native outcome for the in-app diagnostics, (2) bound
+// the native call ourselves, and (3) never run two concurrent native requests:
+// the iOS module holds a SINGLE productsRequest / latest-promise slot, so a
+// second concurrent getSubscriptions() overwrites the first promise and leaves
+// the earlier caller hanging.
+const FETCH_TIMEOUT_MS = 12000;
+
+let lastFetchResult = null;   // { at, ms, ok, stage, rawCount, fetchedIds, error? }
+let inflightFetch = null;     // shared promise — dedupes concurrent callers
+
+function boundedNativeCall(promise, ms, code, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => {
+        const e = new Error(
+          `${label} did not settle within ${ms}ms — the native promise never resolved nor rejected`
+        );
+        e.code = code;
+        reject(e);
+      }, ms);
+    }),
+  ]);
+}
+
 /**
  * Fetch subscription product details from StoreKit / Google Play.
  * @returns {Promise<Array>} Array of product objects with price, title, etc.
  */
 export async function fetchProducts() {
   loadRNIapModule();
-  if (!RNIap) return [];
-  try {
-    lastFetchAttemptIds = [...ALL_PRODUCT_IDS];
-    console.log('[IAP] Fetching products:', ALL_PRODUCT_IDS);
-    const products = await RNIap.getSubscriptions({ skus: ALL_PRODUCT_IDS });
-    lastFetchedProductIds = (products || []).map((p) => p.productId);
-    console.log('[IAP] Products loaded:', products.length);
+  if (!RNIap) {
+    lastFetchResult = {
+      at: Date.now(), ms: 0, ok: false, stage: 'no-module', rawCount: 0, fetchedIds: [],
+      error: { code: 'IAP_MODULE_MISSING', message: 'react-native-iap native module not loaded' },
+    };
+    return [];
+  }
+  if (inflightFetch) {
+    console.log('[IAP] fetchProducts() — reusing in-flight native request (dedupe)');
+    return inflightFetch;
+  }
 
-    // Normalize product data for UI
-    return products.map((product) => ({
+  inflightFetch = (async () => {
+    lastFetchAttemptIds = [...ALL_PRODUCT_IDS];
+    const startedAt = Date.now();
+    try {
+      console.log('[IAP] Fetching products:', ALL_PRODUCT_IDS);
+      const raw = await boundedNativeCall(
+        RNIap.getSubscriptions({ skus: ALL_PRODUCT_IDS }),
+        FETCH_TIMEOUT_MS,
+        'E_FETCH_TIMEOUT',
+        'getSubscriptions()',
+      );
+      const list = Array.isArray(raw) ? raw : [];
+      const rawIds = list.map((p) => p && p.productId).filter(Boolean);
+      lastFetchedProductIds = rawIds;
+      lastFetchResult = {
+        at: Date.now(),
+        ms: Date.now() - startedAt,
+        ok: rawIds.length > 0,
+        // "empty-from-store" = StoreKit DID answer, it just has no product for
+        // any requested ID. That is the ASC-side signature.
+        stage: rawIds.length > 0 ? 'ok' : 'empty-from-store',
+        rawCount: list.length,
+        fetchedIds: rawIds,
+      };
+      console.log(`[IAP] Products loaded: ${list.length} raw item(s), ${rawIds.length} with a productId`);
+
+      // Normalize product data for UI
+      return list.map((product) => ({
       productId: product.productId,
       title: product.title,
       description: product.description,
@@ -273,10 +344,63 @@ export async function fetchProducts() {
       subscriptionPeriodNumberIOS: product.subscriptionPeriodNumberIOS,
       subscriptionPeriodUnitIOS: product.subscriptionPeriodUnitIOS,
       introductoryPriceIOS: product.introductoryPriceIOS,
-    }));
+      }));
+    } catch (error) {
+      lastFetchResult = {
+        at: Date.now(),
+        ms: Date.now() - startedAt,
+        ok: false,
+        stage: 'native-error',
+        rawCount: 0,
+        fetchedIds: [],
+        error: {
+          code: error?.code || 'E_FETCH_UNKNOWN',
+          message: error?.message || String(error),
+        },
+      };
+      console.error('[IAP] Failed to fetch products:', error);
+      return [];
+    } finally {
+      inflightFetch = null;
+    }
+  })();
+
+  return inflightFetch;
+}
+
+/**
+ * StoreKit / Store reachability probe.
+ *
+ * getSubscriptions() alone cannot tell "Apple said no" apart from "StoreKit
+ * cannot reach Apple at all". `getStorefront()` goes to the StoreKit storefront
+ * API, so a country code here proves the StoreKit <-> App Store path works —
+ * which turns the product result into a decisive signal:
+ *   storefront OK + 0 products  =>  the products are not visible to this app
+ *   storefront error            =>  StoreKit/device/network problem
+ */
+export async function fetchStorefront() {
+  loadRNIapModule();
+  if (!RNIap || typeof RNIap.getStorefront !== 'function') {
+    return { ok: false, error: { code: 'E_NO_API', message: 'getStorefront() unavailable in this build' } };
+  }
+  try {
+    const res = await boundedNativeCall(
+      RNIap.getStorefront(),
+      8000,
+      'E_STOREFRONT_TIMEOUT',
+      'getStorefront()',
+    );
+    // Depending on the platform the native side returns a country code string
+    // or a small object; normalise both.
+    const country = typeof res === 'string'
+      ? res
+      : (res && (res.countryCode || res.country || res.storefront)) || JSON.stringify(res);
+    return { ok: true, country };
   } catch (error) {
-    console.error('[IAP] Failed to fetch products:', error);
-    return [];
+    return {
+      ok: false,
+      error: { code: error?.code || 'E_STOREFRONT', message: error?.message || String(error) },
+    };
   }
 }
 
@@ -348,15 +472,16 @@ export async function purchaseSubscription(productId) {
       products.map(p => `${p.productId} (${p.localizedPrice || p.price})`));
 
     if (products.length === 0) {
-      console.warn('[IAP]   ⚠️  No products returned! This usually means:');
-      console.warn('[IAP]     • Product IDs do not match App Store Connect exactly');
-      console.warn('[IAP]     • Products are not "Cleared for Sale" in ASC');
-      console.warn('[IAP]     • Provisioning Profile lacks "In-App Purchase" capability');
-      console.warn('[IAP]     • Sandbox/device not signed into App Store sandbox tester');
+      const lf = lastFetchResult || {};
+      const cause = lf.error
+        ? `${lf.error.code}: ${lf.error.message}`
+        : `App Store answered but returned 0 products (raw=${lf.rawCount ?? 0}, stage=${lf.stage || 'unknown'})`;
+      console.warn('[IAP]   ⚠️  No products returned! stage =', lf.stage, '| cause =', cause);
+      console.warn('[IAP]     • stage=empty-from-store → 商品对当前 App 不可见（ASC 侧配置）');
+      console.warn('[IAP]     • stage=native-error / E_FETCH_TIMEOUT → StoreKit 无响应或报错（设备/网络/库侧）');
       throw new Error(
-        'NO_PRODUCTS: No subscriptions returned from App Store. '
-        + 'Check Product IDs match ASC exactly: '
-        + ALL_PRODUCT_IDS.join(', ')
+        `NO_PRODUCTS: ${cause}. `
+        + `Requested ${ALL_PRODUCT_IDS.length} IDs: ${ALL_PRODUCT_IDS.join(', ')}`
       );
     }
 
@@ -861,6 +986,9 @@ export function getIAPDiagnostics() {
     registeredIds: [...ALL_PRODUCT_IDS],
     attemptedIds: [...lastFetchAttemptIds],
     fetchedIds: [...lastFetchedProductIds],
+    // Raw outcome of the last native fetch: distinguishes
+    // "StoreKit answered empty" from "StoreKit errored" from "never settled".
+    lastFetch: lastFetchResult ? { ...lastFetchResult } : null,
     isStub: IS_RNIAP_STUB,
     isInitialized,
   };

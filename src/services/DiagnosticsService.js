@@ -12,7 +12,14 @@
 // ============================================================
 import { Platform } from 'react-native';
 import { getBuildStamp, BUILD_COMMIT } from '../config/buildInfo';
-import { getIAPDiagnostics, isUsingStub, fetchProducts } from '../services/IAPService';
+import appJson from '../../app.json';
+import {
+  getIAPDiagnostics,
+  isUsingStub,
+  fetchProducts,
+  fetchStorefront,
+  initIAP,
+} from '../services/IAPService';
 import {
   ASR_API_KEY,
   ASR_KEY_SOURCE,
@@ -116,13 +123,44 @@ export function runVoiceWsProbe() {
   });
 }
 
-// ── IAP fetch probe (bounded) ──
+// ── IAP probe (bounded) ──
+//
+// Deliberately mirrors the real purchase path: initConnection() first, then the
+// product fetch. Previously the probe skipped initConnection(), so its result
+// could disagree with what pressing "订阅" actually does.
 export async function runIAPProbe() {
   try {
-    const res = await withTimeout(fetchProducts(), 10000);
-    if (res && res.timedOut) return { ok: false, reason: 'timeout' };
+    // 1) Same connection setup the purchase flow performs
+    try { await initIAP(); } catch (e) { /* non-fatal, recorded below */ }
+
+    // 2) StoreKit reachability — proves whether StoreKit can talk to Apple
+    const storefront = await fetchStorefront();
+
+    // 3) The actual product fetch (bounded; never throws — returns [])
+    const res = await withTimeout(fetchProducts(), 14000);
+    if (res && res.timedOut) {
+      return {
+        ok: false,
+        reason: 'timeout',
+        storefront,
+        stage: 'never-settled',
+        errorText: 'getSubscriptions() 14s 未返回（StoreKit 1 的 didFailWithError 不会 reject，会永久挂起）',
+      };
+    }
+
     const d = getIAPDiagnostics();
-    return { ok: (d.fetchedIds || []).length > 0, registered: d.registeredIds, fetched: d.fetchedIds };
+    const lf = d.lastFetch || {};
+    const ok = (d.fetchedIds || []).length > 0;
+    return {
+      ok,
+      registered: d.registeredIds,
+      fetched: d.fetchedIds,
+      storefront,
+      stage: lf.stage || 'unknown',
+      ms: lf.ms,
+      rawCount: lf.rawCount,
+      errorText: lf.error ? `${lf.error.code}: ${lf.error.message}` : null,
+    };
   } catch (e) {
     return { ok: false, reason: e?.message || String(e) };
   }
@@ -130,23 +168,61 @@ export async function runIAPProbe() {
 
 // ── Build the full report object (UI renders it) ──
 export async function collectDiagnostics() {
+  // Run the live probes FIRST so the rows below can report their outcome.
+  const ws = await runVoiceWsProbe();
+  const iap = await runIAPProbe();
+
   const report = [];
   const section = (title) => { report.push({ section: true, title }); };
 
   // Build
   section('诊断 · Build');
+  const cfgBundleId =
+    (appJson && appJson.expo && appJson.expo.ios && appJson.expo.ios.bundleIdentifier) || '(unknown)';
   report.push({ label: 'Build Stamp', value: getBuildStamp(), status: 'info' });
   report.push({ label: 'Git', value: BUILD_COMMIT, status: 'info' });
   report.push({ label: 'Platform', value: `${Platform.OS} ${Platform.Version || ''}`.trim(), status: 'info' });
-  report.push({ label: 'Bundle ID', value: 'com.seal023.SocialPostAI.20260816', status: 'info' });
+  // Read from app.json (which Xcode Cloud runs `expo prebuild` from) instead of a
+  // hard-coded literal, so this row can never drift from the built binary.
+  report.push({ label: 'Bundle ID', value: `${cfgBundleId} (from app.json → prebuild)`, status: 'info' });
   report.push({ label: 'IAP stub', value: isUsingStub() ? 'YES (storekit unavailable)' : 'no', status: isUsingStub() ? 'warn' : 'ok' });
 
   // IAP
   section('诊断 · 订阅 IAP');
   const d = getIAPDiagnostics();
-  report.push({ label: '注册商品 ID', value: (d.registeredIds || []).join(', ') || '(none)', status: 'info' });
-  report.push({ label: '上次拉取到的 ID', value: (d.fetchedIds || []).join(', ') || '(none)', status: (d.fetchedIds || []).length ? 'ok' : 'warn' });
-  report.push({ label: '上次尝试的 ID', value: (d.attemptedIds || []).join(', ') || '(none)', status: 'info' });
+  const lf = d.lastFetch || null;
+  const fetchedCount = (d.fetchedIds || []).length;
+  report.push({
+    label: `注册商品 ID (${(d.registeredIds || []).length})`,
+    value: (d.registeredIds || []).join(', ') || '(none)',
+    status: 'info',
+  });
+  report.push({
+    label: 'StoreKit 商店地区',
+    value: iap.storefront && iap.storefront.ok
+      ? `${iap.storefront.country} — StoreKit 可达`
+      : `失败 (${(iap.storefront && iap.storefront.error && iap.storefront.error.code) || '?'})`,
+    status: iap.storefront && iap.storefront.ok ? 'ok' : 'fail',
+  });
+  report.push({
+    label: '拉取结果',
+    value: lf
+      ? `${lf.stage} · ${lf.ms}ms · 原始 ${lf.rawCount == null ? '?' : lf.rawCount} 项 / 有效 ${fetchedCount} 项`
+      : `(探针: ${iap.stage || iap.reason || 'n/a'} · ${iap.ms == null ? '?' : iap.ms}ms)`,
+    status: fetchedCount ? 'ok' : 'warn',
+  });
+  report.push({
+    label: '未拉到的原因',
+    value: iap.errorText || '(none — StoreKit 有应答，只是没有商品)',
+    status: iap.errorText ? 'fail' : 'info',
+  });
+  report.push({
+    label: 'IAP 拉取探针',
+    value: iap.ok
+      ? `成功 (${(iap.fetched || []).join(', ') || 'n/a'})`
+      : `失败 (${iap.stage || iap.reason || 'unknown'})`,
+    status: iap.ok ? 'ok' : 'fail',
+  });
 
   // Voice
   section('诊断 · 语音识别（服务器）');
@@ -154,21 +230,10 @@ export async function collectDiagnostics() {
   report.push({ label: '模型', value: PARAFORMER_MODEL, status: 'info' });
   report.push({ label: 'Key 来源', value: ASR_KEY_SOURCE, status: ASR_KEY_REGION_MATCHED ? 'ok' : 'warn' });
   report.push({ label: 'API Key', value: maskKey(ASR_API_KEY), status: ASR_API_KEY ? 'ok' : 'fail' });
-
-  // Voice WS probe
-  const ws = await runVoiceWsProbe();
   report.push({
     label: 'WebSocket 连通性',
     value: ws.ok ? `正常 (${ws.reason})` : `异常 (${ws.reason})`,
     status: ws.ok ? 'ok' : 'fail',
-  });
-
-  // IAP probe
-  const iap = await runIAPProbe();
-  report.push({
-    label: 'IAP 拉取探针',
-    value: iap.ok ? `成功 (${(iap.fetched || []).join(', ') || 'n/a'})` : `失败 (${iap.reason})`,
-    status: iap.ok ? 'ok' : 'fail',
   });
 
   return report;

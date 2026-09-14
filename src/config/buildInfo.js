@@ -6,10 +6,10 @@
 // than the latest commit, the installed build is stale (TestFlight
 // did not pick up the new build).
 // ============================================================
-export const BUILD_STAMP = 'iap-v2-fix · 2026-09-14 · +diag+IAPdiag+ASRkey+cul';
+export const BUILD_STAMP = 'iap-v2-fix+iapdiag2 · 2026-09-14 · +diag+IAPdiag+ASRkey+cul';
 
 // Git commit / branch this build was cut from (informational)
-export const BUILD_COMMIT = 'main@iap-v2-fix';
+export const BUILD_COMMIT = 'main@iap-v2-fix+iapdiag2';
 
 // QA-only tools (e.g. the quota-reset entries in Profile / the daily-limit
 // dialog). Flip this to false BEFORE submitting to the App Store — while it is

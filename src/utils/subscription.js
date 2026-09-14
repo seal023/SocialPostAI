@@ -31,7 +31,14 @@ import {
   syncEntitlement,
   getLastEntitlementResult,
   getStoreKitMode,
+  isUserCancelled,
 } from '../services/IAPService';
+
+// Re-exported so screens can branch on "the user dismissed Apple's sheet"
+// without importing the service directly — and without re-hardcoding the
+// E_USER_CANCELLED spelling (the one-L typo that caused a false
+// "购买失败 PRODUCT_NOT_FOUND" alert on a plain cancel).
+export { isUserCancelled };
 
 // ---- Constants ----
 

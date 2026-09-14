@@ -231,9 +231,9 @@ export async function collectDiagnostics() {
   report.push({
     label: 'StoreKit 模式',
     value: d.storekitMode === 'sk2'
-      ? 'StoreKit 2（HYBRID · 真实报错，不再哑挂起）'
+      ? 'StoreKit 2（HYBRID · iOS≥15 生效 · 本地查询权益，无登录弹窗）'
       : d.storekitMode === 'sk1'
-        ? 'StoreKit 1（临时回退 · 沙盒可返回未提交商品，付款可用）'
+        ? 'StoreKit 1（仅 iOS<15 回退）'
         : (d.storekitMode || 'unknown'),
     status: d.storekitMode === 'sk2' ? 'ok' : 'info',
   });

@@ -34,13 +34,19 @@ let LOAD_ATTEMPTED = false;
 // ============================================================
 // react-native-iap v12 ships BOTH native implementations (RNIapIos =
 // StoreKit 1, RNIapIosSk2 = StoreKit 2) and lets us choose at runtime with
-// setup({ storekitMode }). We TEMPORARILY force STOREKIT1_MODE (2026-09-14):
-// StoreKit 2's Product.products(for:) silently returns empty for subscriptions
-// that are still "Ready to Submit" / not yet submitted with a build, so purchases
-// fail with E_DEVELOPER_ERROR "Invalid product ID". StoreKit 1's SKProductsRequest
-// returns those products in the sandbox, so Sk1 unblocks sandbox purchasing today.
-// TODO: flip back to STOREKIT_HYBRID_MODE once the .v2 subscriptions are submitted
-// in App Store Connect (subscription group submitted with an app version).
+// setup({ storekitMode }). We use STOREKIT_HYBRID_MODE — StoreKit 2 on iOS >= 15,
+// StoreKit 1 only on older devices.
+//
+// NOTE (2026-09-14, verified on device): an earlier change tried to revert this to
+// STOREKIT1_MODE, believing Sk2 could not return the still-unsubmitted `.v2`
+// subscriptions. That belief was WRONG, and the revert never actually reached the
+// line below — only the comment and the diagnostics labels changed, so every build
+// has been running StoreKit 2 all along. On-device evidence with Sk2 active:
+//   "商品拉取: store returned 2 raw item(s), stage=ok"
+//   + the TestFlight sandbox sheet opened with the real price (¥328.00/年).
+// The earlier "0 items / never-settled" fetch was a SIGNED-OUT App Store account —
+// with no account StoreKit never answers a products request — NOT a Sk2 limitation.
+// Staying on Sk2 also avoids Sk1's iOS 26 SKPaymentQueue main-thread crash.
 //
 // Why this is the fix for three separate on-device failures:
 //
@@ -64,6 +70,43 @@ let LOAD_ATTEMPTED = false;
 //     which was impossible on Sk1 without the restore sheet.
 let IAP_STOREKIT_MODE = 'unknown';
 let IAP_SETUP_ERROR = null;
+
+// ============================================================
+// User-cancellation predicate — THE root cause of a bad alert
+// ============================================================
+// react-native-iap reports a user cancel as `E_USER_CANCELLED` with TWO L's on
+// both platforms:
+//   ios/IapTypes.swift:20  case E_USER_CANCELLED = "E_USER_CANCELLED"
+//   ios/RNIapIos.swift:536 / ios/RNIapIosSk2.swift:779   (Sk1 + Sk2)
+//   android/.../PromiseUtils.kt:52
+// Earlier code here compared against `E_USER_CANCELED` (ONE L), which NEVER
+// matched. A cancel therefore fell through to the generic failure path and the
+// user saw a bogus, alarming alert while nothing was actually broken:
+//   "购买失败 PRODUCT_NOT_FOUND: E_USER_CANCELLED: User cancelled the purchase
+//    | 商品拉取: store returned 2 raw item(s), stage=ok
+//    | 可能原因: 商品拉取失败：请检查 App Store 账号与商品配置"
+// i.e. a false "product fetch failed" claim on a fetch that had succeeded.
+// One predicate, used everywhere, so the spelling can never drift again.
+const CANCEL_CODES = new Set([
+  'E_USER_CANCELLED',
+  'E_USER_CANCELED',
+  'E_USER_CANCEL',
+  'USER_CANCELLED',
+  'USER_CANCELED',
+]);
+
+/**
+ * True when the failure is simply "the user dismissed Apple's sheet".
+ * @param {any} err - an Error, a plain {code,message}, or a string
+ * @returns {boolean}
+ */
+export function isUserCancelled(err) {
+  if (!err) return false;
+  const code = String(err.code || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
+  if (CANCEL_CODES.has(code)) return true;
+  const message = String(err.message || (typeof err === 'string' ? err : ''));
+  return /user\s*cancel/i.test(message) || /E_USER_CANCELLED/i.test(message);
+}
 
 function enableBestStoreKit() {
   if (!RNIap || IS_RNIAP_STUB) {
@@ -285,8 +328,8 @@ function setupPurchaseListeners() {
   purchaseErrorListener = RNIap.purchaseErrorListener(async (error) => {
     console.error('[IAP] Purchase error:', error.code, error.message);
 
-    // User cancelled — don't show error alert
-    if (error.code === 'E_USER_CANCELED') {
+    // User cancelled — don't show error alert (two-L spelling, see isUserCancelled)
+    if (isUserCancelled(error)) {
       console.log('[IAP] User cancelled purchase');
       return;
     }
@@ -659,11 +702,16 @@ export async function purchaseSubscription(productId) {
       } catch (e) {
         lastError = e;
         // User cancelled → propagate immediately; do not retry other SKUs.
-        if (e?.code === 'E_USER_CANCELED') throw e;
+        // (Must use isUserCancelled: the native code is E_USER_CANCELLED, 2 L's.)
+        if (isUserCancelled(e)) throw e;
         console.warn(`[IAP]   requestSubscription("${sku}") rejected:`, e?.code, e?.message);
       }
     }
     if (lastError) {
+      // A cancellation is NOT a product problem. If it slips through with an
+      // unexpected code, rethrow it untouched rather than dressing it up as
+      // PRODUCT_NOT_FOUND — that false alert is exactly what confused this bug.
+      if (isUserCancelled(lastError)) throw lastError;
       // Every candidate failed — this is the ASC / product-configuration case.
       // Include the fetch evidence so the on-screen alert is actionable.
       const lf = lastFetchResult || {};
@@ -671,17 +719,22 @@ export async function purchaseSubscription(productId) {
         ? `${lf.error.code}: ${lf.error.message}`
         : `store returned ${lf.rawCount ?? 0} raw item(s), stage=${lf.stage || 'unknown'}`;
       // Classify the failure so the on-screen alert tells the user WHAT TO FIX:
-      //   empty-from-store → the product itself is not live (ASC side)
+      //   ok                 → products WERE returned; the failure was the purchase itself
+      //   empty-from-store   → the product itself is not live (ASC side)
       //   timeout/native-error → StoreKit never answered (account / network / sandbox)
       let hint;
-      if (lf.stage === 'empty-from-store') {
+      if (lf.ok && !lf.error) {
+        // The catalog was fetched fine (e.g. "store returned 2 raw item(s),
+        // stage=ok"), so do NOT blame the product configuration.
+        hint = '商品已正常取到，购买未完成：可能是授权被中断 / 支付未完成 / 网络中断，可直接重试';
+      } else if (lf.stage === 'empty-from-store') {
         hint = '商品未在 App Store 生效：请确认订阅处于"准备提交"且元数据完整、Bundle ID 与 App 记录一致、付费 App 协议/银行税务有效';
       } else if (lf.error && lf.error.code === 'E_FETCH_TIMEOUT') {
-        hint = 'StoreKit 无响应：请确认已登录 App Store / 沙盒账号（TestFlight 沙盒包需要沙盒账号），且设备地区与商品可售地区一致';
+        hint = 'StoreKit 无响应：请确认设备已登录 App Store 账号（TestFlight 包用你 iPhone 上的 Apple ID 即可，无需沙盒账号），且设备地区与商品可售地区一致';
       } else if (lf.stage === 'native-error') {
-        hint = 'StoreKit 报错：可能是账号状态或沙盒问题，请重试并检查 App Store 登录';
+        hint = 'StoreKit 报错：可能是账号状态或沙盒环境问题，请重试并检查 App Store 登录';
       } else {
-        hint = '商品拉取失败：请检查 App Store 账号与商品配置';
+        hint = '购买未完成：请重试；若持续失败，再检查 App Store 账号与商品配置';
       }
       const err = new Error(
         `PRODUCT_NOT_FOUND: ${lastError.code || 'E_UNKNOWN'}: ${lastError.message} `
@@ -702,14 +755,20 @@ export async function purchaseSubscription(productId) {
     console.error('[IAP]   message:', error.message);
     console.error('[IAP]   stack  :', error.stack ? error.stack.split('\n').slice(0, 3).join('\n') : '(no stack)');
 
+    // A cancellation is not a failure: no entitlement check, no error callback,
+    // but the caller gets the code back so it can stay silent instead of
+    // popping a "purchase failed" alert for something the user chose.
+    if (isUserCancelled(error)) {
+      console.log('[IAP] purchaseSubscription: user cancelled the sheet — reporting as cancel');
+      throw error;
+    }
+
     // A "failure" here often just means "you already own this subscription"
     // (or the transaction was already delivered in an earlier session). Ask
     // StoreKit what the user actually owns before reporting a hard failure —
     // that is what turns "第二次购买提示已订阅，但 App 仍显示升级到 Pro" into a
     // real Pro unlock.
-    if (error.code !== 'E_USER_CANCELED') {
-      try { await syncEntitlement('purchase-failed'); } catch (e) { /* non-fatal */ }
-    }
+    try { await syncEntitlement('purchase-failed'); } catch (e) { /* non-fatal */ }
 
     if (onPurchaseErrorCallback) onPurchaseErrorCallback(error);
     throw error;

@@ -38,7 +38,7 @@ import {
   subscribeSubscription,
   PRODUCT_IDS,
 } from '../utils/subscription';
-import { baseProductId } from '../services/IAPService';
+import { baseProductId, isUserCancelled } from '../services/IAPService';
 import { useLanguage } from '../context/LanguageContext';
 import { signInWithApple, signOutApple, getAppleAuthState, isAppleAuthAvailable } from '../services/AppleAuthService';
 import { getPermissions } from '../utils/permissions';
@@ -346,7 +346,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
             t('iap_not_available_title'),
             t('iap_not_available_desc'),
           );
-        } else if (result.error !== 'E_USER_CANCELED') {
+        } else if (!isUserCancelled({ code: result.error, message: result.message })) {
           Alert.alert(
             t('purchase_failed_title'),
             result.message || t('purchase_failed_desc'),

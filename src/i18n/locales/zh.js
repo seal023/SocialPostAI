@@ -352,6 +352,7 @@ const zh = {
   restore_failed_not_available: '当前环境不支持内购（Expo Go）。',
   restore_revoked_title: '已更新为免费版',
   restore_revoked_desc: 'Apple 账号当前没有有效订阅，Pro 权限已更新为免费版。',
+  got_it: '知道了',
   subscribe_btn: '订阅',
   subscribe_btn_loading: '处理中...',
   restore_purchases: '恢复购买',

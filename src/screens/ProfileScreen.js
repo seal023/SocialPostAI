@@ -163,6 +163,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
   const [appleUser, setAppleUser] = useState(null);
   const [permissions, setPermissions] = useState(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [restoreModal, setRestoreModal] = useState(null); // { tone: 'success'|'error'|'info', icon, title, desc }
   // Guards the "欢迎 Pro" welcome alert so it shows at most once per session,
   // even if the subscription event fires more than once (purchase + restore).
   const proWelcomeShownRef = useRef(false);
@@ -1711,6 +1712,56 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xl,
     fontWeight: '700',
     marginBottom: SPACING.xs,
+  },
+  restoreModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  restoreModalCard: {
+    width: '90%',
+    maxWidth: 360,
+    borderRadius: 24,
+    paddingVertical: 32,
+    paddingHorizontal: 26,
+    alignItems: 'center',
+    ...SHADOWS.float,
+  },
+  restoreIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  restoreIconEmoji: {
+    fontSize: 38,
+  },
+  restoreTitle: {
+    fontSize: 21,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  restoreDesc: {
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 23,
+    marginBottom: 24,
+  },
+  restoreButton: {
+    width: '100%',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  restoreButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
   modalSubtitle: {
     fontSize: FONT_SIZE.xs,

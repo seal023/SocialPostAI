@@ -352,6 +352,7 @@ const en = {
   restore_failed_not_available: 'In-app purchases are not available in this environment (Expo Go).',
   restore_revoked_title: 'Updated to Free',
   restore_revoked_desc: 'Your Apple account has no active subscription — Pro access has been updated to Free.',
+  got_it: 'Got it',
   subscribe_btn: 'Subscribe',
   subscribe_btn_loading: 'Processing...',
   restore_purchases: 'Restore Purchases',

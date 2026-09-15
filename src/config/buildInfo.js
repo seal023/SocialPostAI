@@ -6,28 +6,28 @@
 // than the latest commit, the installed build is stale (TestFlight
 // did not pick up the new build).
 // ============================================================
-export const BUILD_STAMP = 'ascAppId→6801996062 + dev-tools __DEV__ gate · 2026-09-14 · iap-sk2 + no-owned-repurchase + voice-dedup + paywall-readable + manage-subs + restore-verify';
+export const BUILD_STAMP = 'ascAppId→6801996062 · 2026-09-15 · iap-sk2 + no-owned-repurchase + voice-dedup + paywall-readable + manage-subs + restore-verify · CLEAN (dev-tools __DEV__-only · .env.production removed)';
 
 // Git commit / branch this build was cut from (informational)
-export const BUILD_COMMIT = 'main@iap-v2-fix+noownedrepurchase+voicededup+paywallreadable+managesubs+restoreverify';
+export const BUILD_COMMIT = 'main@iap-v2-fix+restoreverify+clean-prod';
 
 // QA-only tools (e.g. the quota-reset entry + the 诊断自检 panel in Profile).
-// These must be HIDDEN in the production App Store build.
+// These must be HIDDEN in EVERY production build — TestFlight AND App Store.
 //
-// Gate logic (keyed off __DEV__, NOT an env var):
+// Gate logic (keyed off __DEV__ ONLY — no env override, by design):
 //   - Dev builds (`__DEV__ === true`: Expo Go / dev client / local) → true  (visible)
-//   - Production builds (`__DEV__ === false`: Xcode Cloud Release)     → false (hidden)
-//   - Force-enable in a production build by setting EXPO_PUBLIC_SHOW_DEV_TOOLS=true
-//     (e.g. a debug TestFlight build).
+//   - Production builds (`__DEV__ === false`: ALL Xcode Cloud Release builds)
+//                                                                         → false (hidden)
 //
-// WHY __DEV__ AND NOT eas.json env: Xcode Cloud runs its own bundling and
-// NEVER reads `eas.json` `build.production.env`, so EXPO_PUBLIC_SHOW_DEV_TOOLS
-// set there is inert for Xcode Cloud builds. With the old `!== 'false'` check the
-// var was `undefined` in Xcode Cloud → tools stayed VISIBLE in the App Store build.
-// `__DEV__` is reliably false in a Release build, so the gate is correct everywhere.
-export const TEST_TOOLS_ENABLED =
-  (typeof __DEV__ !== 'undefined' && __DEV__) ||
-  process.env.EXPO_PUBLIC_SHOW_DEV_TOOLS === 'true';
+// WHY __DEV__-ONLY (no EXPO_PUBLIC_SHOW_DEV_TOOLS override):
+// An earlier build leaked the 诊断自检 / 恢复测试额度 entries into TestFlight
+// because EXPO_PUBLIC_SHOW_DEV_TOOLS=true was baked via the tracked
+// `.env.production` file (loaded by @expo/env at bundle time). To GUARANTEE a
+// clean production app — independent of any Xcode Cloud env var or a stray
+// `.env*` file — the gate is now __DEV__-only. A Release build can NEVER show
+// QA tools, no matter what. To debug a Release build, run a dev client / Expo Go
+// instead (where __DEV__ is true). This is the "准确、干净的 app" guarantee.
+export const TEST_TOOLS_ENABLED = (typeof __DEV__ !== 'undefined' && __DEV__);
 
 // Bump this string on every meaningful fix commit so we can tell
 // builds apart from the device without reading logs.

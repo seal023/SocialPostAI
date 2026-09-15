@@ -227,6 +227,7 @@ const en = {
   // Subscription
   upgrade_to_pro: 'Upgrade to Pro',
   subscription_active: 'Subscribed · Pro',
+  subscription_active_hint: 'You are already a Pro member. To change or cancel, use "Manage Subscription" below.',
   already_subscribed_title: "You're already subscribed",
   already_subscribed_desc: 'Your Pro membership is active — no need to purchase again. To manage or cancel, go to Settings → Apple ID → Subscriptions.',
   paywall_free_trial_then: 'Start 7-day free trial, then {price}',

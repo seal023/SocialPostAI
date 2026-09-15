@@ -1285,6 +1285,12 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
               )}
             </TouchableOpacity>
 
+            {subscriptionState.status === 'pro' && (
+              <Text style={[styles.restoreText, { color: theme.subtitle, textAlign: 'center', marginTop: -SPACING.xs }]}>
+                {t('subscription_active_hint')}
+              </Text>
+            )}
+
             <TouchableOpacity
               onPress={handleRestorePurchase}
               activeOpacity={0.7}

@@ -6,7 +6,7 @@
 // than the latest commit, the installed build is stale (TestFlight
 // did not pick up the new build).
 // ============================================================
-export const BUILD_STAMP = 'ascAppId→6801996062 · 2026-09-15 · iap-sk2 + restore-verify + clean-prod + diag-entry-gated + zh-placeholder-fix + unlimited-label + restore-modal';
+export const BUILD_STAMP = 'ascAppId→6801996062 · 2026-09-15 · iap-sk2 + restore-verify + clean-prod + diag-entry-gated + zh-placeholder-fix + unlimited-label + restore-modal + pro-hint';
 
 // Git commit / branch this build was cut from (informational)
 export const BUILD_COMMIT = 'main@diagentrygated+zhplaceholderfix+unlimitedlabel';

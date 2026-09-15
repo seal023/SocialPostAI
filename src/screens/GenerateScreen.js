@@ -1091,7 +1091,9 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
             )}
           </TouchableOpacity>
           <Text style={[styles.remainingText, { color: theme.subtitle }]}>
-            {t('remaining_today', { count: remainingCount })}
+            {remainingCount >= 999
+              ? t('remaining_unlimited')
+              : t('remaining_today', { count: remainingCount })}
           </Text>
         </Animated.View>
 

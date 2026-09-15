@@ -19,6 +19,7 @@ const en = {
   chars: 'chars',
   generate_copy: 'Generate Copy',
   remaining_today: 'Remaining {count} times / Today',
+  remaining_unlimited: 'Unlimited today',
   recent: 'Recent',
 
   // Tone labels

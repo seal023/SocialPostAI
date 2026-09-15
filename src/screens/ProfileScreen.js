@@ -1045,18 +1045,20 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
           )}
           <SettingRow
             item={{ id: 'rate', icon: '⭐', titleKey: 'rate_app' }}
-            isLast={false}
+            isLast={!TEST_TOOLS_ENABLED}
             theme={theme}
             onPress={handleRateApp}
             t={t}
           />
-          <SettingRow
-            item={{ id: 'diag', icon: '🩺', titleKey: 'diag_open' }}
-            isLast={true}
-            theme={theme}
-            onPress={() => setShowDiagnostics(true)}
-            t={t}
-          />
+          {TEST_TOOLS_ENABLED && (
+            <SettingRow
+              item={{ id: 'diag', icon: '🩺', titleKey: 'diag_open' }}
+              isLast={true}
+              theme={theme}
+              onPress={() => setShowDiagnostics(true)}
+              t={t}
+            />
+          )}
         </View>
 
         {/* ===== Version ===== */}

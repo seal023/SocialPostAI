@@ -19,6 +19,7 @@ const zh = {
   chars: '字符',
   generate_copy: '生成文案',
   remaining_today: '剩余 {count} 次 / 今日',
+  remaining_unlimited: '今日不限次',
   recent: '最近',
 
   // Tone labels

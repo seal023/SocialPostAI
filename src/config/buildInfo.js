@@ -6,10 +6,10 @@
 // than the latest commit, the installed build is stale (TestFlight
 // did not pick up the new build).
 // ============================================================
-export const BUILD_STAMP = 'ascAppId→6801996062 · 2026-09-15 · iap-sk2 + no-owned-repurchase + voice-dedup + paywall-readable + manage-subs + restore-verify · CLEAN (dev-tools __DEV__-only · .env.production removed)';
+export const BUILD_STAMP = 'ascAppId→6801996062 · 2026-09-15 · iap-sk2 + restore-verify + clean-prod + diag-entry-gated + zh-placeholder-fix + unlimited-label';
 
 // Git commit / branch this build was cut from (informational)
-export const BUILD_COMMIT = 'main@iap-v2-fix+restoreverify+clean-prod';
+export const BUILD_COMMIT = 'main@diagentrygated+zhplaceholderfix+unlimitedlabel';
 
 // QA-only tools (e.g. the quota-reset entry + the 诊断自检 panel in Profile).
 // These must be HIDDEN in EVERY production build — TestFlight AND App Store.

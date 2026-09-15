@@ -364,9 +364,15 @@ function enforceOutputLanguage(text, outputLanguage) {
     ];
 
     const placeholders = [];
-    protectedPatterns.forEach(({ regex, type }) => {
+    protectedPatterns.forEach(({ regex }) => {
       tempText = tempText.replace(regex, (match) => {
-        const placeholder = `__PROT_${type}_${placeholders.length}__`;
+        // Private-Use-Area sentinels — contain NO [A-Za-z] characters and are not
+        // Chinese, so the English-stripping steps below can never chew the
+        // placeholder apart. Regression: the old form `__PROT_${type}_${n}__`
+        // had its alphabetic segments ("PROT"/"platform"/…) stripped by Step 4,
+        // which left literal `____N__` / `___N___` garbage in the final copy
+        // because the Step 5 restore then failed to match the mangled token.
+        const placeholder = `\uE000${placeholders.length}\uE001`;
         placeholders.push({ placeholder, value: match });
         return placeholder;
       });

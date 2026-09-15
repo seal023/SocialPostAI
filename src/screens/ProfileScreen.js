@@ -545,24 +545,35 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
 
       if (!result.success) {
         // No purchase to restore (or a stale Pro was just revoked) — tell the
-        // user; the subscription event only fires when an actual restored
-        // transaction is delivered.
-        Alert.alert(
-          t(result.titleKey || 'restore_failed_title'),
-          t(result.messageKey || 'restore_failed_desc'),
-        );
-      } else if (!proWelcomeShownRef.current) {
+        // user via the custom modal (not a tiny system Alert).
+        setRestoreModal({
+          tone: 'error',
+          icon: '⚠️',
+          title: t(result.titleKey || 'restore_failed_title'),
+          desc: t(result.messageKey || 'restore_failed_desc'),
+        });
+      } else {
         // Restore succeeded → greet from here (the shared status listener no
         // longer greets, precisely so a passive reconcile can never pop a
         // "Purchase Successful" alert for an already-subscribed user).
         proWelcomeShownRef.current = true;
-        Alert.alert('✅ ' + t('purchase_success_title'), t('purchase_success_desc'));
+        setRestoreModal({
+          tone: 'success',
+          icon: '✅',
+          title: t('purchase_success_title'),
+          desc: t('purchase_success_desc'),
+        });
       }
       // On success the purchaseUpdatedListener also pushes the new state via
       // subscribeSubscription (closes the paywall + unlocks Pro live).
     } catch (error) {
       console.error('[ProfileScreen] Restore error:', error);
-      Alert.alert(t('restore_failed_title'), t('restore_failed_desc'));
+      setRestoreModal({
+        tone: 'error',
+        icon: '⚠️',
+        title: t('restore_failed_title'),
+        desc: t('restore_failed_desc'),
+      });
     } finally {
       setIsRestoring(false);
     }
@@ -1349,6 +1360,48 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
           themeName={themeName}
         />
       )}
+
+      {/* ===== Restore Result Modal (custom, eye-catching) ===== */}
+      <Modal
+        visible={!!restoreModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRestoreModal(null)}
+      >
+        <View style={[styles.restoreModalOverlay, { backgroundColor: theme.overlay }]}>
+          <View style={[styles.restoreModalCard, { backgroundColor: theme.card }]}>
+            {restoreModal?.icon ? (
+              <View
+                style={[
+                  styles.restoreIconCircle,
+                  {
+                    backgroundColor:
+                      restoreModal.tone === 'success'
+                        ? theme.success
+                        : restoreModal.tone === 'error'
+                        ? theme.danger
+                        : theme.primary,
+                  },
+                ]}
+              >
+                <Text style={styles.restoreIconEmoji}>{restoreModal.icon}</Text>
+              </View>
+            ) : null}
+            <Text style={[styles.restoreTitle, { color: theme.title }]}>
+              {restoreModal?.title}
+            </Text>
+            <Text style={[styles.restoreDesc, { color: theme.subtitle }]}>
+              {restoreModal?.desc}
+            </Text>
+            <TouchableOpacity
+              style={[styles.restoreButton, { backgroundColor: theme.primary }]}
+              onPress={() => setRestoreModal(null)}
+            >
+              <Text style={styles.restoreButtonText}>{t('got_it')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* ===== Theme Style Picker Modal ===== */}
       <Modal

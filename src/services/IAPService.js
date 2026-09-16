@@ -909,6 +909,12 @@ export async function syncEntitlement(reason = 'manual') {
         lastEntitlementResult = {
           at: Date.now(), reason, ok: true, stage: 'found', mode: IAP_STOREKIT_MODE,
           via: 'currentEntitlements(active)', productId: best.productId, count: subs.length,
+          // The entitlement's OWN transaction timestamp. Callers use it to tell a
+          // genuinely NEW purchase (txDate ≈ now) apart from merely re-detecting a
+          // subscription the user already owned — e.g. tapping 订阅 on an
+          // auto-renew-cancelled sub that is still inside its paid period (Apple
+          // returns the existing transaction instead of selling a duplicate).
+          transactionDate: best.transactionDate ?? null,
         };
         return best;
       }

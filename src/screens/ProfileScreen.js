@@ -40,7 +40,7 @@ import {
   manageSubscriptions,
   PRODUCT_IDS,
 } from '../utils/subscription';
-import { baseProductId, isUserCancelled } from '../services/IAPService';
+import { baseProductId, isUserCancelled, getLastEntitlementResult } from '../services/IAPService';
 import { useLanguage } from '../context/LanguageContext';
 import { signInWithApple, signOutApple, getAppleAuthState, isAppleAuthAvailable } from '../services/AppleAuthService';
 import { getPermissions } from '../utils/permissions';
@@ -442,6 +442,10 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
     }
 
     setIsPurchasing(true);
+    // The instant the user committed to buying. A genuinely NEW transaction
+    // carries a timestamp ≈ this moment; a pre-existing entitlement (an
+    // already-owned subscription) carries an OLDER one — see isNewPurchase below.
+    const attemptAt = Date.now();
     try {
       console.log('[ProfileScreen] Calling purchasePro...');
       const result = await purchasePro(tier.productId);
@@ -474,9 +478,9 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
       // account (or when StoreKit hands back an already-owned / queued
       // transaction) it resolves with NO payment sheet and NO charge. The previous
       // code greeted here unconditionally, which is exactly how "购买成功 / 欢迎
-      // 升级 Pro" popped with nothing purchased (2026-09-16). Verify against
-      // Apple FIRST and only greet when a real, currently-active entitlement
-      // exists.
+      // 升级 Pro" popped with nothing purchased (2026-09-16).
+      //
+      // Ask Apple what we own, then decide whether the entitlement is NEW.
       let verified = false;
       try {
         verified = await syncProEntitlement('post-purchase');
@@ -492,15 +496,36 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
         setPermissions(perms);
       } catch (e) {}
 
-      if (verified || subState.status === 'pro') {
-        // Genuine entitlement (syncProEntitlement found it, or the purchase
-        // listener already wrote 'pro') → greet and close the paywall. The shared
+      // ── New purchase vs. already owned ─────────────────────────────────────
+      // `verified` alone cannot tell these apart: tapping 订阅 on a subscription
+      // the user ALREADY owns (e.g. an auto-renew-CANCELLED sub that is still
+      // inside its paid period) makes Apple hand back the EXISTING transaction
+      // with no sheet and no charge — yet syncProEntitlement happily reports it.
+      // So compare the entitlement's OWN transaction timestamp to the moment the
+      // user tapped: a real purchase closes AFTER the tap (txDate >= attemptAt,
+      // minus a little slack for clock skew); a pre-existing entitlement is older.
+      const ent = getLastEntitlementResult ? getLastEntitlementResult() : null;
+      let txAt = ent ? ent.transactionDate : null;
+      if (typeof txAt === 'string') txAt = Date.parse(txAt);
+      if (typeof txAt === 'number' && txAt > 0 && txAt < 1e12) txAt = txAt * 1000; // seconds → ms
+      const isNewPurchase =
+        verified && typeof txAt === 'number' && txAt >= attemptAt - 60000;
+
+      if (isNewPurchase) {
+        // Genuine new entitlement → greet and close the paywall. The shared
         // listener has already pushed the new state to the other tabs.
         setShowSubscription(false);
         if (!proWelcomeShownRef.current) {
           proWelcomeShownRef.current = true;
           Alert.alert('✅ ' + t('purchase_success_title'), t('purchase_success_desc'));
         }
+      } else if (verified || subState.status === 'pro') {
+        // The user already owns an active subscription — nothing new was bought.
+        // Close the paywall and say so, instead of claiming a (non-existent)
+        // purchase. Pro IS still valid until its expiry date even when auto-renew
+        // was cancelled, so the Pro UI on the other tabs is correct.
+        setShowSubscription(false);
+        Alert.alert(t('already_subscribed_title'), t('already_subscribed_desc'));
       } else {
         // The sheet flow returned but Apple confirms NOTHING was purchased — do
         // NOT claim success. Say so plainly so the user can retry / restore

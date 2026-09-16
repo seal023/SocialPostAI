@@ -397,6 +397,10 @@ const en = {
   apple_manage_account: 'Manage Apple Account',
   apple_sign_out_confirm: 'Signing out will clear your local subscription status and Pro access. This does not delete your Apple account.',
   apple_id_subscribed: 'Apple ID (subscribed)',
+  apple_id_label: 'Apple ID',
+  plan_tag_pro: 'Pro subscribed',
+  plan_tag_trial: 'Trial',
+  plan_tag_free: 'Not subscribed',
   welcome_back: 'Welcome back!',
 
   // Login screen

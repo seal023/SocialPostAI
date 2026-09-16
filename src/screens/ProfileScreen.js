@@ -666,7 +666,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
       t('apple_manage_account'),
       appleUser?.email
         ? `${appleUser.fullName || t('content_creator')}\n${appleUser.email}`
-        : (appleUser?.fullName || t('apple_id_subscribed')),
+        : (appleUser?.fullName || t('apple_id_label')),
       [
         { text: t('cancel'), style: 'cancel' },
         {
@@ -967,11 +967,47 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
                         {t('apple_bound')}
                       </Text>
                       <Text style={[styles.appleUserEmail, { color: theme.subtitle }]} numberOfLines={1}>
-                        {appleUser?.email || appleUser?.fullName || t('apple_id_subscribed')}
+                        {appleUser?.email || appleUser?.fullName || t('apple_id_label')}
                       </Text>
                     </View>
                   </View>
-                  <Text style={[styles.appleManageArrow, { color: theme.placeholder }]}>›</Text>
+                  <View style={styles.appleRightGroup}>
+                    {/* Plan-state tag — driven by the SAME subscriptionState.status
+                        the 👑 Pro row uses, so this row can never disagree with it.
+                        It used to fall back to a static "（已订阅）" label that had
+                        no relation to the real entitlement, so the row still read
+                        "已订阅" after the subscription had lapsed. */}
+                    {subscriptionState.status !== 'loading' && (
+                      <View
+                        style={[
+                          styles.planStateTag,
+                          {
+                            backgroundColor: subscriptionState.status === 'pro'
+                              ? theme.primaryLight
+                              : (theme.borderLight || theme.border),
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.planStateTagText,
+                            {
+                              color: subscriptionState.status === 'pro'
+                                ? theme.primary
+                                : theme.subtitle,
+                            },
+                          ]}
+                        >
+                          {subscriptionState.status === 'pro'
+                            ? t('plan_tag_pro')
+                            : subscriptionState.status === 'trial'
+                              ? t('plan_tag_trial')
+                              : t('plan_tag_free')}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={[styles.appleManageArrow, { color: theme.placeholder }]}>›</Text>
+                  </View>
                 </TouchableOpacity>
 
                 {/* Sign out row — always visible in all subscription states */}
@@ -2084,6 +2120,20 @@ const styles = StyleSheet.create({
   appleManageArrow: {
     fontSize: FONT_SIZE.xl,
     fontWeight: '300',
+  },
+  appleRightGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  planStateTag: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginRight: SPACING.xs,
+  },
+  planStateTagText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   appleSignOutRow: {
     flexDirection: 'row',

@@ -397,6 +397,10 @@ const zh = {
   apple_manage_account: '管理 Apple 账号',
   apple_sign_out_confirm: '退出登录将清除本地订阅状态和 Pro 权限，不会删除您的 Apple 账户。',
   apple_id_subscribed: 'Apple ID（已订阅）',
+  apple_id_label: 'Apple ID',
+  plan_tag_pro: '已订阅 Pro',
+  plan_tag_trial: '试用中',
+  plan_tag_free: '未订阅',
   welcome_back: '欢迎回来！',
 
   // Login screen

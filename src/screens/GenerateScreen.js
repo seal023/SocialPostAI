@@ -488,6 +488,33 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
         <Text style={[styles.navBrand, { color: theme.primary }]}>
           ✨ {t('nav_brand')}
         </Text>
+        {/* Plan-state chip — the home screen mirrors the same subscriptionState
+            the Profile page renders, so the tier shown here (Pro / trial / free)
+            can never drift from the 👑 Pro row there. */}
+        <View
+          style={[
+            styles.navPlanTag,
+            {
+              backgroundColor: subscriptionState.status === 'pro'
+                ? theme.primaryLight
+                : (theme.borderLight || theme.border),
+            },
+          ]}
+        >
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.navPlanTagText,
+              { color: subscriptionState.status === 'pro' ? theme.primary : theme.subtitle },
+            ]}
+          >
+            {subscriptionState.status === 'pro'
+              ? t('subscription_active')
+              : subscriptionState.status === 'trial'
+                ? t('trial_badge', { days: subscriptionState.trialDaysLeft })
+                : t('free_plan_limited')}
+          </Text>
+        </View>
       </View>
 
       {/* ===== Scrollable Content ===== */}
@@ -1128,11 +1155,23 @@ const styles = StyleSheet.create({
     height: 56,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
     paddingHorizontal: SPACING.xl,
   },
   navBrand: {
     fontSize: 22,
+    fontWeight: '700',
+    flexShrink: 0,
+  },
+  navPlanTag: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    flexShrink: 1,
+    marginLeft: SPACING.md,
+  },
+  navPlanTagText: {
+    fontSize: 12,
     fontWeight: '700',
   },
 

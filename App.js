@@ -49,20 +49,34 @@ function AppNavigator() {
     const lt = tRef.current; // capture latest t at mount time
     (async () => {
      try {
-      // Initialize subscription system
-      await initSubscription();
+      // ---- 1) Restore the Apple ID session FIRST ----
+      // This MUST run before any StoreKit/subscription step. On device those can
+      // hang indefinitely (StoreKit never settles while no App Store account is
+      // signed in) or throw; while they sat ahead of this line, a stuck IAP call
+      // meant we never reached it → the app showed the sign-in gate on EVERY
+      // launch even though the Apple session was already stored on disk.
+      try {
+        const authState = await getAppleAuthState();
+        setIsLoggedIn(authState.isLoggedIn);
+      } catch (authError) {
+        console.error('[App] Auth state restore failed:', authError);
+      }
 
-      // NOTE: IAP initialization (initIAPIntegration) removed from launch path.
-      // StoreKit calls at startup (initConnection / getAvailablePurchases) throw a
-      // native exception on iOS 26 → SIGABRT crash. IAP is now lazily initialized
-      // when the user opens the Profile screen (see ProfileScreen loadData).
+      // ---- 2) Subscription bootstrap (best-effort — never gates the login gate) ----
+      try {
+        // Initialize subscription system
+        await initSubscription();
 
-      // Verify subscription state on relaunch (checks cached receipt)
-      await verifySubscriptionOnLaunch();
+        // NOTE: IAP initialization (initIAPIntegration) removed from launch path.
+        // StoreKit calls at startup (initConnection / getAvailablePurchases) throw a
+        // native exception on iOS 26 → SIGABRT crash. IAP is now lazily initialized
+        // when the user opens the Profile screen (see ProfileScreen loadData).
 
-      // Check Apple ID login status
-      const authState = await getAppleAuthState();
-      setIsLoggedIn(authState.isLoggedIn);
+        // Verify subscription state on relaunch (checks cached receipt)
+        await verifySubscriptionOnLaunch();
+      } catch (subError) {
+        console.error('[App] Subscription bootstrap failed (non-fatal):', subError);
+      }
 
       const prefs = await getPreference();
       if (prefs.theme) {

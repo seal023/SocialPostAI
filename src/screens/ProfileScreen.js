@@ -1166,6 +1166,12 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
       >
         <View style={[styles.modalOverlay, { backgroundColor: theme.overlay }]}>
           <View style={[styles.subModalCard, { backgroundColor: theme.card }]}>
+            {/* Scrollable: the Pro footer (status banner + two action pills) made
+                this card taller than the viewport on smaller iPhones. */}
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: SPACING.xs }}
+            >
             <Text style={[styles.modalTitle, { color: theme.title }]}>
               👑 {subscriptionState.status === 'pro' ? t('subscription_active') : t('upgrade_to_pro')}
             </Text>
@@ -1269,49 +1275,68 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
               ))}
             </View>
 
-            <TouchableOpacity
-              style={[styles.modalCloseBtn, {
-                backgroundColor: subscriptionState.status === 'pro' ? theme.border : theme.primary,
-                opacity: isPurchasing || subscriptionState.status === 'pro' ? 0.6 : 1,
-              }]}
-              onPress={() => {
-                // INTERCEPTION POINT: never start a purchase for an entitlement we
-                // already own — StoreKit would resolve WITHOUT a payment sheet and
-                // we'd celebrate a purchase that never happened. handlePurchase also
-                // re-checks the live entitlement (state can be stale), so this guard
-                // is belt-and-braces.
-                if (subscriptionState.status === 'pro') return;
-                const tier = PROFILE_TIERS.find((t) => t.id === selectedTier);
-                if (tier) handlePurchase(tier);
-              }}
-              activeOpacity={0.7}
-              disabled={isPurchasing || subscriptionState.status === 'pro'}
-            >
-              {isPurchasing ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.modalCloseText}>
-                  {subscriptionState.status === 'pro' ? t('subscription_active') : t('subscribe_btn')}
+            {/* ---- Purchase action / Pro status ----
+                Previously a DISABLED grey button (theme.border + opacity 0.6 with
+                white text) sat here while Pro was active: white-on-light-grey at
+                60% opacity was unreadable, and the hint underneath was pulled up
+                by a NEGATIVE margin → the two visibly overlapped (reported
+                2026-09-16). Now: an explicit green status banner while Pro, and
+                the real subscribe button only when a purchase is possible. */}
+            {subscriptionState.status === 'pro' ? (
+              <View
+                style={[
+                  styles.proStatusBanner,
+                  {
+                    backgroundColor: theme.isDark ? 'rgba(16,185,129,0.16)' : 'rgba(16,185,129,0.10)',
+                    borderColor: theme.success,
+                  },
+                ]}
+              >
+                <Text style={[styles.proStatusTitle, { color: theme.success }]}>
+                  ✅ {t('subscription_active')}
                 </Text>
-              )}
-            </TouchableOpacity>
-
-            {subscriptionState.status === 'pro' && (
-              <Text style={[styles.restoreText, { color: theme.subtitle, textAlign: 'center', marginTop: -SPACING.xs }]}>
-                {t('subscription_active_hint')}
-              </Text>
+                <Text style={[styles.proStatusHint, { color: theme.subtitle }]}>
+                  {t('subscription_active_hint')}
+                </Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[styles.modalCloseBtn, { backgroundColor: theme.primary }]}
+                onPress={() => {
+                  // INTERCEPTION POINT: never start a purchase for an entitlement we
+                  // already own — StoreKit would resolve WITHOUT a payment sheet and
+                  // we'd celebrate a purchase that never happened. handlePurchase also
+                  // re-checks the live entitlement (state can be stale), so this guard
+                  // is belt-and-braces.
+                  if (subscriptionState.status === 'pro') return;
+                  const tier = PROFILE_TIERS.find((t) => t.id === selectedTier);
+                  if (tier) handlePurchase(tier);
+                }}
+                activeOpacity={0.7}
+                disabled={isPurchasing}
+              >
+                {isPurchasing ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.modalCloseText}>{t('subscribe_btn')}</Text>
+                )}
+              </TouchableOpacity>
             )}
 
+            {/* Secondary actions — outlined pills instead of faint grey text.
+                The old labels were 11px in theme.placeholder (#B0B0B8) with no
+                padding: nearly invisible and too small to tap reliably. */}
             <TouchableOpacity
               onPress={handleRestorePurchase}
               activeOpacity={0.7}
-              style={styles.restoreRow}
+              style={[styles.paywallSecondaryBtn, { borderColor: theme.primary }]}
               disabled={isRestoring}
             >
               {isRestoring ? (
-                <ActivityIndicator color={theme.placeholder} size="small" />
+                <ActivityIndicator color={theme.primary} size="small" />
               ) : (
-                <Text style={[styles.restoreText, { color: theme.placeholder }]}>
+                <Text style={[styles.paywallSecondaryText, { color: theme.primary }]}>
+                  ↻{' '}
                   {t('restore_purchases')}
                 </Text>
               )}
@@ -1324,9 +1349,10 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
             <TouchableOpacity
               onPress={handleManageSubscription}
               activeOpacity={0.7}
-              style={styles.restoreRow}
+              style={[styles.paywallSecondaryBtn, { borderColor: theme.primary }]}
             >
-              <Text style={[styles.restoreText, { color: theme.placeholder }]}>
+              <Text style={[styles.paywallSecondaryText, { color: theme.primary }]}>
+                ⚙️{' '}
                 {t('manage_subscription')}
               </Text>
             </TouchableOpacity>
@@ -1348,6 +1374,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
                 {t('cancel')}
               </Text>
             </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1763,6 +1790,10 @@ const styles = StyleSheet.create({
   },
   subModalCard: {
     width: '100%',
+    // Cap the height and let the inner ScrollView take over: with the Pro status
+    // banner + two action pills the card is taller than a small iPhone viewport,
+    // and a centered overlay would clip both ends (2026-09-16).
+    maxHeight: '90%',
     borderRadius: RADIUS.xl,
     padding: SPACING.lg,
     ...SHADOWS.float,
@@ -1989,12 +2020,39 @@ const styles = StyleSheet.create({
     marginTop: 4,
     lineHeight: 13,
   },
-  restoreRow: {
+  // ---- Paywall: Pro status banner + secondary action pills ----
+  // Replaced the old restoreRow/restoreText pair (11px, theme.placeholder, no
+  // padding) — those were nearly invisible AND got pulled into the disabled
+  // button above by a negative margin, so the text visibly overlapped.
+  proStatusBanner: {
+    marginTop: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1.5,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     alignItems: 'center',
-    marginTop: SPACING.sm,
   },
-  restoreText: {
-    fontSize: FONT_SIZE.xs,
+  proStatusTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  proStatusHint: {
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  paywallSecondaryBtn: {
+    marginTop: SPACING.md,
+    paddingVertical: 14,
+    borderRadius: RADIUS.md,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paywallSecondaryText: {
+    fontSize: FONT_SIZE.lg,
+    fontWeight: '600',
   },
 
   // Apple ID Sign In

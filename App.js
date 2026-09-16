@@ -403,6 +403,7 @@ function AppNavigator() {
               {...props}
               themeName={themeName}
               onThemeChange={handleThemeChange}
+              onSignOut={() => setIsLoggedIn(false)}
             />
           )}
         </Tab.Screen>

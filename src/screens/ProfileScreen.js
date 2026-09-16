@@ -139,7 +139,7 @@ const STYLE_KEY_MAP = {
   minimal: 'style_minimal',
 };
 
-export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
+export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSignOut }) {
   const theme = getTheme(themeName);
   const { t, language, setLanguage } = useLanguage();
   const [stats, setStats] = useState({ today: 0, month: 0, total: 0 });
@@ -424,14 +424,15 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
     let ownsPro = subscriptionState.status === 'pro';
     if (!ownsPro) {
       try {
-        const found = await syncProEntitlement('pre-purchase');
-        if (found) {
-          const subState = await getSubscriptionState();
-          setSubscriptionState(subState);
-          const perms = await getPermissions();
-          setPermissions(perms);
-          ownsPro = subState.status === 'pro';
-        }
+        // syncProEntitlement() can now also DOWNGRADE (when Apple decisively
+        // reports that nothing is owned), so always re-read the derived state —
+        // not only when it returns a positive hit.
+        await syncProEntitlement('pre-purchase');
+        const subState = await getSubscriptionState();
+        setSubscriptionState(subState);
+        const perms = await getPermissions();
+        setPermissions(perms);
+        ownsPro = subState.status === 'pro';
       } catch (e) {}
     }
     if (ownsPro) {
@@ -654,6 +655,11 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
             setSubscriptionState(subState);
             const perms = await getPermissions();
             setPermissions(perms);
+            // Hand control back to App.js — signing out must return to the login
+            // gate. Without this the user stayed on the tabs with no account and
+            // could still drive the paywall, which is what produced the
+            // "signed out but told 你已订阅 Pro" confusion.
+            if (onSignOut) onSignOut();
           },
         },
       ]

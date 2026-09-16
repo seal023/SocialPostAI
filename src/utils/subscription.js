@@ -546,6 +546,55 @@ export async function restoreProPurchase() {
 }
 
 /**
+ * Ask StoreKit for the CURRENT entitlement, and downgrade Pro → free when Apple
+ * answers DECISIVELY that nothing is owned.
+ *
+ * Why this is needed: both the launch verify and the paywall reconcile used to
+ * fall back to the locally stored status whenever StoreKit reported nothing.
+ * Combined with "only ever upgrade", that made `pro` a one-way door — a
+ * cancelled / lapsed subscription (e.g. a TestFlight "production sandbox" sub
+ * whose period has ended) kept showing "已订阅 · Pro 会员" forever, and tapping
+ * 订阅 even popped a bogus "你已订阅 Pro".
+ *
+ * We still never downgrade on an INCONCLUSIVE answer — native error, timeout,
+ * module missing, Sk1 — because Sk2 filters currentEntitlements against the
+ * native product cache, which can legitimately be empty before it warms up.
+ * Only a positive "Apple says: no active subscription" (stage `no-entitlement`
+ * or `historical-only`) may take Pro away.
+ *
+ * @param {string} reason - diagnostics label ('verify-on-launch' | 'paywall' | ...)
+ * @returns {Promise<boolean>} true when Pro is (still) owned
+ */
+async function reconcileWithStoreKit(reason) {
+  const found = await syncEntitlement(reason);
+  if (found) return true;
+
+  const last = getLastEntitlementResult();
+  const decisive =
+    !!last && (last.stage === 'no-entitlement' || last.stage === 'historical-only');
+  if (!decisive) {
+    // Error / timeout / no native module → not evidence of anything. Keep the
+    // local status rather than punishing a paying user for a flaky network.
+    return await isProUser();
+  }
+
+  const wasPro = await isProUser();
+  // expireSubscription() writes 'free' AND clears the cached receipt, so the
+  // next launch cannot be short-circuited by a stale receipt.
+  await expireSubscription();
+  if (wasPro) {
+    console.warn(
+      `[Subscription] StoreKit reports ${last.stage} (${reason}) — downgraded Pro → free`,
+    );
+  } else {
+    console.log(
+      `[Subscription] StoreKit reports ${last.stage} (${reason}) — local state already free`,
+    );
+  }
+  return false;
+}
+
+/**
  * Verify subscription status on app launch.
  * Checks cached receipt and validates with StoreKit.
  */
@@ -554,12 +603,20 @@ export async function verifySubscriptionOnLaunch() {
     const status = await getSubscriptionStatus();
     if (status !== 'pro') return;
 
-    // "Pro but no cached receipt" must NOT silently downgrade the user. The
-    // receipt cache can legitimately be empty (reinstall, cleared storage,
-    // AsyncStorage hiccup) while the subscription itself is perfectly valid —
-    // the old code turned that into an instant downgrade to free.
-    // Ask StoreKit instead, and only downgrade on a POSITIVE "owns nothing"
-    // answer — never on a native/network error.
+    // StoreKit 2 → ask Apple directly. currentEntitlements is a LOCAL,
+    // prompt-free, authoritative query, so it is the only thing that can tell
+    // us whether the subscription is STILL active. The receipt cache cannot:
+    // a lapsed subscription keeps its receipt, which is exactly why the old
+    // "has cached receipt ⇒ trust Pro" shortcut left expired subs as Pro.
+    if (isIAPAvailable() && getStoreKitMode().mode === 'sk2') {
+      await reconcileWithStoreKit('verify-on-launch');
+      return;
+    }
+
+    // StoreKit 1 / IAP unavailable → keep the old behaviour. "Pro but no cached
+    // receipt" must NOT silently downgrade the user: the receipt cache can
+    // legitimately be empty (reinstall, cleared storage, AsyncStorage hiccup)
+    // while the subscription itself is perfectly valid.
     const cached = await getCachedReceipt();
     if (cached) {
       console.log('[Subscription] Pro status verified with cached receipt');
@@ -576,7 +633,7 @@ export async function verifySubscriptionOnLaunch() {
     const last = getLastEntitlementResult();
     if (last && last.stage === 'no-entitlement') {
       console.warn('[Subscription] StoreKit reports no entitlement — downgrading to free');
-      await saveSubscriptionStatus('free');
+      await expireSubscription();
     } else {
       console.warn('[Subscription] Entitlement check inconclusive — keeping Pro:', last?.stage);
     }
@@ -601,11 +658,11 @@ export async function syncProEntitlement(reason = 'paywall') {
     // keep the locally-stored status (the purchase/restore flows handle Sk1).
     const mode = getStoreKitMode().mode;
     if (mode === 'sk2') {
-      const found = await syncEntitlement(reason);
-      if (found) return true;
+      // NOTE: unlike before, this can also DOWNGRADE — see
+      // reconcileWithStoreKit(). It only does so when Apple answers
+      // authoritatively that no subscription is currently owned.
+      return await reconcileWithStoreKit(reason);
     }
-    // No entitlement found (or Sk1 / the check errored) — fall back to whatever
-    // we already had locally rather than downgrading the user.
     return await isProUser();
   } catch (e) {
     console.error('[Subscription] syncProEntitlement failed:', e);

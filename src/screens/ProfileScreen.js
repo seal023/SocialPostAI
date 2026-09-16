@@ -952,7 +952,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange }) {
         {/* ===== Apple ID Login ===== */}
         {isAppleAuthAvailable() && (
           <View style={[styles.sectionCard, { backgroundColor: theme.card }]}>
-            {appleUser || subscriptionState?.status === 'pro' || subscriptionState?.status === 'trial' ? (
+            {appleUser ? (
               <>
                 {/* Apple ID info row */}
                 <TouchableOpacity

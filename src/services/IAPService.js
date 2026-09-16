@@ -950,9 +950,24 @@ export async function syncEntitlement(reason = 'manual') {
     }
   }
 
+  // ── Was StoreKit actually answering? ─────────────────────────────────────
+  // An EMPTY entitlement list is only meaningful if StoreKit is demonstrably
+  // alive — i.e. the catalog fetch above returned our products. When it did NOT
+  // (device signed OUT of the App Store account → getSubscriptions() times out;
+  // or the products are invisible to this build → 'empty-from-store'), StoreKit 2
+  // filters currentEntitlements against the native product cache, so a REAL
+  // subscriber would also come back empty. Treating that as "Apple says you own
+  // nothing" is what wrongly downgraded a paying user to free the moment they
+  // signed out of the App Store account (2026-09-16) — which then made the UI
+  // contradict itself ("已订阅 Pro" while 语音输入 stayed locked). Classify it as
+  // inconclusive instead, so reconcileWithStoreKit never downgrades on it.
+  const storeReachable = !!(lastFetchResult && lastFetchResult.ok === true);
   lastEntitlementResult = {
     at: Date.now(), reason, ok: false, mode: IAP_STOREKIT_MODE,
-    stage: historyInfo ? 'historical-only' : (activeError ? 'native-error' : 'no-entitlement'),
+    stage: historyInfo
+      ? 'historical-only'
+      : (activeError || !storeReachable ? 'native-error' : 'no-entitlement'),
+    store: lastFetchResult ? lastFetchResult.stage : 'unknown',
     history: historyInfo,
     error: activeError ? { code: activeError.code, message: activeError.message } : null,
   };

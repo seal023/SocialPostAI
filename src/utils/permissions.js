@@ -6,13 +6,38 @@
 // ============================================================
 
 import { getSubscriptionStatus } from './storage';
+import { getSubscriptionState } from './subscription';
 
 /**
  * Get the current permission set based on subscription status.
  * @returns {Promise<{tier: string, canEditProfile: boolean, canUseVoice: boolean, canUseBrandVoice: boolean, canUseCulturalCheck: boolean, canFavorite: boolean, historyRetentionDays: number, showProBadge: boolean, dailyLimit: number}>}
  */
 export async function getPermissions() {
-  const status = await getSubscriptionStatus();
+  // ── Single source of truth for the tier ──────────────────────────────────
+  // Derive from getSubscriptionState() — the SAME function the home-screen plan
+  // chip and the trial banner render from — instead of reading the RAW stored
+  // status.
+  //
+  // Why: getSubscriptionState() RE-DERIVES the 30-day trial from the install
+  // date, so it reports 'trial' even when the raw stored value is 'free' (which
+  // is exactly what a Pro downgrade writes). Reading the raw value here made the
+  // feature gates disagree with the UI: on device the home screen showed
+  // "免费试用·剩余7天" while 语音输入 stayed locked with "此功能需要 Pro 版本"
+  // (2026-09-16). Deriving both from the same state object makes "what the UI
+  // says" and "what is actually unlocked" impossible to drift apart.
+  let status;
+  try {
+    status = (await getSubscriptionState())?.status;
+  } catch (e) {
+    status = null;
+  }
+  if (!status) {
+    try {
+      status = await getSubscriptionStatus();
+    } catch (e) {
+      status = 'free';
+    }
+  }
 
   // Trial — 7 days, all features except profile editing / Pro badge
   if (status === 'trial') {

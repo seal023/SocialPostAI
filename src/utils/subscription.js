@@ -677,6 +677,12 @@ export async function syncProEntitlement(reason = 'paywall') {
 export async function expireSubscription() {
   await saveSubscriptionStatus('free');
   await clearCachedReceipt();
+  // Push the downgrade to every subscribed screen. Without this a downgrade
+  // performed by one screen (e.g. the paywall's reconcile, or launch verify)
+  // left the OTHER tabs still rendering "Pro" until they were re-focused —
+  // which is how the home screen could keep showing Pro / unlocked features
+  // after the Profile page had already dropped to free.
+  notifySubscriptionChanged();
   console.log('[Subscription] Subscription expired, downgraded to free');
 }
 

@@ -85,8 +85,21 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
 
   // Live subscription updates: when Pro is unlocked (purchase/restore), refresh
   // the trial/free banner and quota immediately instead of waiting for remount.
+  //
+  // ⚠️ Must refresh the derived PERMISSIONS too, not just the state object. This
+  // header's chip renders from subscriptionState while the 🎤 voice button is
+  // gated on permissions.canUseVoice — if only the state were updated, the chip
+  // would flip to "Pro" while voice stayed locked until the tab was re-focused
+  // (2026-09-16: "已订阅 Pro 了，语音仍提示需要 Pro"). ProfileScreen already
+  // refreshes both; this brings the home tab in line.
   useEffect(() => {
-    const unsub = subscribeSubscription((state) => setSubscriptionState(state));
+    const unsub = subscribeSubscription(async (state) => {
+      setSubscriptionState(state);
+      try {
+        const perms = await getPermissions();
+        setPermissions(perms);
+      } catch (e) {}
+    });
     return unsub;
   }, []);
 

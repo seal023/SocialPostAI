@@ -454,37 +454,59 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
             t('iap_not_available_desc'),
           );
         } else if (!isUserCancelled({ code: result.error, message: result.message })) {
-          Alert.alert(
-            t('purchase_failed_title'),
-            result.message || t('purchase_failed_desc'),
-          );
+          // StoreKit never answered (device has no App Store account / storefront
+          // mismatch / no network) → the raw PRODUCT_NOT_FOUND payload embeds the
+          // whole fetch diagnostic. Show the short, actionable version instead.
+          if (/E_FETCH_TIMEOUT|StoreKit 无响应|did not settle/.test(String(result.message || ''))) {
+            Alert.alert(t('purchase_no_account_title'), t('purchase_no_account_desc'));
+          } else {
+            Alert.alert(
+              t('purchase_failed_title'),
+              result.message || t('purchase_failed_desc'),
+            );
+          }
         }
         return;
       }
 
-      // StoreKit resolved the purchase promise → the transaction completed on
-      // Apple's side. Greet NOW: this resolved promise is the authoritative
-      // "Apple finished the transaction" signal, and the reconcile below can take
-      // several seconds (it re-warms the catalog and asks StoreKit what we own),
-      // so waiting for it would delay the alert noticeably.
-      if (!proWelcomeShownRef.current) {
-        proWelcomeShownRef.current = true;
-        Alert.alert('✅ ' + t('purchase_success_title'), t('purchase_success_desc'));
-      }
-
-      // Then reconcile, so the unlock is guaranteed even if the purchaseUpdated
-      // listener event was missed or landed late (e.g. the listener was attached
-      // after the transaction was delivered).
+      // ⚠️ A resolved purchasePro() only means "the native StoreKit call
+      // returned" — it is NOT proof the user paid. On a device with no App Store
+      // account (or when StoreKit hands back an already-owned / queued
+      // transaction) it resolves with NO payment sheet and NO charge. The previous
+      // code greeted here unconditionally, which is exactly how "购买成功 / 欢迎
+      // 升级 Pro" popped with nothing purchased (2026-09-16). Verify against
+      // Apple FIRST and only greet when a real, currently-active entitlement
+      // exists.
+      let verified = false;
       try {
-        const found = await syncProEntitlement('post-purchase');
-        if (found) {
-          const subState = await getSubscriptionState();
-          setSubscriptionState(subState);
-          const perms = await getPermissions();
-          setPermissions(perms);
-          setShowSubscription(false);
-        }
+        verified = await syncProEntitlement('post-purchase');
       } catch (e) {}
+
+      let subState = subscriptionState;
+      try {
+        subState = await getSubscriptionState();
+        setSubscriptionState(subState);
+      } catch (e) {}
+      try {
+        const perms = await getPermissions();
+        setPermissions(perms);
+      } catch (e) {}
+
+      if (verified || subState.status === 'pro') {
+        // Genuine entitlement (syncProEntitlement found it, or the purchase
+        // listener already wrote 'pro') → greet and close the paywall. The shared
+        // listener has already pushed the new state to the other tabs.
+        setShowSubscription(false);
+        if (!proWelcomeShownRef.current) {
+          proWelcomeShownRef.current = true;
+          Alert.alert('✅ ' + t('purchase_success_title'), t('purchase_success_desc'));
+        }
+      } else {
+        // The sheet flow returned but Apple confirms NOTHING was purchased — do
+        // NOT claim success. Say so plainly so the user can retry / restore
+        // instead of believing they are Pro while features stay locked.
+        Alert.alert(t('purchase_incomplete_title'), t('purchase_incomplete_desc'));
+      }
     } catch (error) {
       console.error('[ProfileScreen] Purchase error:', error);
       Alert.alert(t('purchase_failed_title'), t('purchase_failed_desc'));

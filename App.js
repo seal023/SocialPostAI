@@ -9,7 +9,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Alert } from 'react-native';
+import { Alert, Platform, View } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { COLORS, setStyleTheme, getTheme } from './src/themes/theme';
 import { getPreference, savePreference } from './src/utils/storage';
@@ -30,6 +30,30 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import LoginScreen from './src/screens/LoginScreen';
 
 const Tab = createBottomTabNavigator();
+
+// iPad 上把内容约束为手机宽度并居中、两侧露出背景色（留白），
+// 与 App Store 截图的观感一致；iPhone 仍铺满全屏、行为不变。
+const TABLET_MAX_WIDTH = 500;
+
+function TabletFrame({ children, bg }) {
+  if (!(Platform.OS === 'ios' && Platform.isPad)) {
+    return <>{children}</>;
+  }
+  return (
+    <View style={{ flex: 1, backgroundColor: bg }}>
+      <View
+        style={{
+          flex: 1,
+          width: '100%',
+          maxWidth: TABLET_MAX_WIDTH,
+          alignSelf: 'center',
+        }}
+      >
+        {children}
+      </View>
+    </View>
+  );
+}
 
 function AppNavigator() {
   const [themeName, setThemeName] = useState('pink');
@@ -315,14 +339,17 @@ function AppNavigator() {
   // Show login screen if not logged in
   if (isReady && !isLoggedIn) {
     return (
-      <LoginScreen
-        themeName={themeName}
-        onLoginSuccess={() => setIsLoggedIn(true)}
-      />
+      <TabletFrame bg={theme.background}>
+        <LoginScreen
+          themeName={themeName}
+          onLoginSuccess={() => setIsLoggedIn(true)}
+        />
+      </TabletFrame>
     );
   }
 
   return (
+    <TabletFrame bg={theme.background}>
     <NavigationContainer
       theme={{
         dark: theme.isDark || false,
@@ -409,6 +436,7 @@ function AppNavigator() {
         </Tab.Screen>
       </Tab.Navigator>
     </NavigationContainer>
+    </TabletFrame>
   );
 }
 

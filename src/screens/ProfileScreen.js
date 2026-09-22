@@ -1205,14 +1205,17 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
                 {/* Delete Account row — Apple Guideline 5.1.1(v): apps that create
                     an account MUST offer in-app account deletion (not just sign-out). */}
                 <TouchableOpacity
-                  style={[styles.appleDeleteRow, { borderTopColor: theme.borderLight }]}
+                  style={styles.appleDeleteRow}
                   onPress={handleDeleteAccount}
-                  activeOpacity={0.7}
+                  activeOpacity={0.6}
                 >
-                  <Text style={[styles.appleDeleteText, { color: theme.danger || '#E54848' }]}>
-                    {t('delete_account')}
-                  </Text>
-                  <Text style={[styles.appleSignOutArrow, { color: theme.placeholder }]}>›</Text>
+                  <View style={styles.appleDeleteLead}>
+                    <Text style={styles.appleDeleteIcon}>⚠️</Text>
+                    <Text style={[styles.appleDeleteText, { color: theme.danger || '#E54848' }]}>
+                      {t('delete_account')}
+                    </Text>
+                  </View>
+                  <Text style={[styles.appleDeleteArrow, { color: theme.danger || '#E54848' }]}>›</Text>
                 </TouchableOpacity>
               </>
             ) : (
@@ -2269,12 +2272,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderTopWidth: 1,
-    marginTop: SPACING.sm,
-    paddingTop: SPACING.sm,
+    marginTop: SPACING.md,
+    paddingVertical: SPACING.md + 2,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.md,
+    backgroundColor: 'rgba(229,72,72,0.12)',
+  },
+  appleDeleteLead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  appleDeleteIcon: {
+    fontSize: 18,
+    marginRight: SPACING.sm,
   },
   appleDeleteText: {
-    fontSize: FONT_SIZE.md,
+    fontSize: FONT_SIZE.lg,
+    fontWeight: '800',
+  },
+  appleDeleteArrow: {
+    fontSize: FONT_SIZE.lg,
     fontWeight: '700',
   },
   appleSignOutArrow: {

@@ -1052,6 +1052,83 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
           </View>
         </TouchableOpacity>
 
+        {/* ===== Settings List ===== */}
+        <View style={[styles.sectionCard, { backgroundColor: theme.card }]}>
+          <SettingRow
+            item={{ id: 'privacy', icon: '🔒', titleKey: 'privacy_policy' }}
+            isLast={false}
+            theme={theme}
+            onPress={() => Linking.openURL(PRIVACY_URL)}
+            t={t}
+          />
+          <SettingRow
+            item={{ id: 'terms', icon: '📄', titleKey: 'terms_of_service' }}
+            isLast={false}
+            theme={theme}
+            onPress={() => Linking.openURL(TERMS_URL)}
+            t={t}
+          />
+          <SettingRow
+            item={{ id: 'data_storage', icon: '💾', titleKey: 'data_storage_notice' }}
+            isLast={false}
+            theme={theme}
+            onPress={() => Alert.alert(
+              t('data_storage_title'),
+              t('data_storage_desc'),
+              [{ text: t('data_storage_ok') }],
+            )}
+            t={t}
+          />
+          <SettingRow
+            item={{ id: 'ai_disclaimer', icon: '🤖', titleKey: 'ai_content_notice' }}
+            isLast={false}
+            theme={theme}
+            onPress={() => Alert.alert(
+              t('ai_disclaimer_title'),
+              t('ai_disclaimer_desc'),
+              [{ text: t('ai_disclaimer_ok') }],
+            )}
+            t={t}
+          />
+          <SettingRow
+            item={{ id: 'contact', icon: '📧', titleKey: 'contact_us' }}
+            isLast={false}
+            theme={theme}
+            onPress={() => Alert.alert(t('contact_us'), t('contact_desc'))}
+            t={t}
+          />
+          {TEST_TOOLS_ENABLED && (
+            <SettingRow
+              item={{ id: 'dev_reset', icon: '🧪', titleKey: 'dev_reset_quota' }}
+              isLast={false}
+              theme={theme}
+              onPress={handleDevReset}
+              t={t}
+            />
+          )}
+          <SettingRow
+            item={{ id: 'rate', icon: '⭐', titleKey: 'rate_app' }}
+            isLast={!TEST_TOOLS_ENABLED}
+            theme={theme}
+            onPress={handleRateApp}
+            t={t}
+          />
+          {TEST_TOOLS_ENABLED && (
+            <SettingRow
+              item={{ id: 'diag', icon: '🩺', titleKey: 'diag_open' }}
+              isLast={true}
+              theme={theme}
+              onPress={() => setShowDiagnostics(true)}
+              t={t}
+            />
+          )}
+        </View>
+
+        {/* ===== Version ===== */}
+        <Text style={[styles.version, { color: theme.placeholder }]}>
+          SocialPost AI v1.0.0
+        </Text>
+
         {/* ===== Apple ID Login ===== */}
         {isAppleAuthAvailable() && (
           <View style={[styles.sectionCard, { backgroundColor: theme.card }]}>
@@ -1153,82 +1230,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
           </View>
         )}
 
-        {/* ===== Settings List ===== */}
-        <View style={[styles.sectionCard, { backgroundColor: theme.card }]}>
-          <SettingRow
-            item={{ id: 'privacy', icon: '🔒', titleKey: 'privacy_policy' }}
-            isLast={false}
-            theme={theme}
-            onPress={() => Linking.openURL(PRIVACY_URL)}
-            t={t}
-          />
-          <SettingRow
-            item={{ id: 'terms', icon: '📄', titleKey: 'terms_of_service' }}
-            isLast={false}
-            theme={theme}
-            onPress={() => Linking.openURL(TERMS_URL)}
-            t={t}
-          />
-          <SettingRow
-            item={{ id: 'data_storage', icon: '💾', titleKey: 'data_storage_notice' }}
-            isLast={false}
-            theme={theme}
-            onPress={() => Alert.alert(
-              t('data_storage_title'),
-              t('data_storage_desc'),
-              [{ text: t('data_storage_ok') }],
-            )}
-            t={t}
-          />
-          <SettingRow
-            item={{ id: 'ai_disclaimer', icon: '🤖', titleKey: 'ai_content_notice' }}
-            isLast={false}
-            theme={theme}
-            onPress={() => Alert.alert(
-              t('ai_disclaimer_title'),
-              t('ai_disclaimer_desc'),
-              [{ text: t('ai_disclaimer_ok') }],
-            )}
-            t={t}
-          />
-          <SettingRow
-            item={{ id: 'contact', icon: '📧', titleKey: 'contact_us' }}
-            isLast={false}
-            theme={theme}
-            onPress={() => Alert.alert(t('contact_us'), t('contact_desc'))}
-            t={t}
-          />
-          {TEST_TOOLS_ENABLED && (
-            <SettingRow
-              item={{ id: 'dev_reset', icon: '🧪', titleKey: 'dev_reset_quota' }}
-              isLast={false}
-              theme={theme}
-              onPress={handleDevReset}
-              t={t}
-            />
-          )}
-          <SettingRow
-            item={{ id: 'rate', icon: '⭐', titleKey: 'rate_app' }}
-            isLast={!TEST_TOOLS_ENABLED}
-            theme={theme}
-            onPress={handleRateApp}
-            t={t}
-          />
-          {TEST_TOOLS_ENABLED && (
-            <SettingRow
-              item={{ id: 'diag', icon: '🩺', titleKey: 'diag_open' }}
-              isLast={true}
-              theme={theme}
-              onPress={() => setShowDiagnostics(true)}
-              t={t}
-            />
-          )}
-        </View>
-
-        {/* ===== Version ===== */}
-        <Text style={[styles.version, { color: theme.placeholder }]}>
-          SocialPost AI v1.0.0
-        </Text>
+        
       </ScrollView>
 
       {/* ===== Interface Language Picker Modal ===== */}

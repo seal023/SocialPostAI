@@ -42,7 +42,7 @@ import {
 } from '../utils/subscription';
 import { baseProductId, isUserCancelled, getLastEntitlementResult } from '../services/IAPService';
 import { useLanguage } from '../context/LanguageContext';
-import { signInWithApple, signOutApple, getAppleAuthState, isAppleAuthAvailable } from '../services/AppleAuthService';
+import { signInWithApple, signOutApple, deleteAppleAccount, getAppleAuthState, isAppleAuthAvailable } from '../services/AppleAuthService';
 import { getPermissions } from '../utils/permissions';
 import BrandVoiceScreen from './BrandVoiceScreen';
 import ResultDrawer from '../components/ResultDrawer';
@@ -713,6 +713,56 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
     );
   };
 
+  // ---- Delete Account (Apple Guideline 5.1.1(v)) ----
+  // Signing out is NOT enough — apps that create an account must offer an
+  // in-app deletion path. Two-step destructive confirm to avoid accidental loss.
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      t('delete_account_title'),
+      t('delete_account_confirm'),
+      [
+        { text: t('cancel'), style: 'cancel' },
+        {
+          text: t('delete_account_confirm_action'),
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              t('delete_account_title'),
+              t('delete_account_confirm_final'),
+              [
+                { text: t('cancel'), style: 'cancel' },
+                {
+                  text: t('delete_account'),
+                  style: 'destructive',
+                  onPress: async () => {
+                    const res = await deleteAppleAccount();
+                    setAppleUser(null);
+                    // Reset subscription / permission state to fresh (free) so the
+                    // UI can't show a stale Pro badge after deletion.
+                    try {
+                      const subState = await getSubscriptionState();
+                      setSubscriptionState(subState);
+                      const perms = await getPermissions();
+                      setPermissions(perms);
+                    } catch (e) {
+                      // best-effort
+                    }
+                    if (res.success) {
+                      Alert.alert('✅ ' + t('delete_account_done'));
+                    }
+                    // Hand control back to App.js login gate — deleting the account
+                    // must return the app to a first-launch (signed-out) state.
+                    if (onSignOut) onSignOut();
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  };
+
   // ---- Show Apple account options ----
   const handleAppleAccountPress = () => {
     Alert.alert(
@@ -1071,6 +1121,19 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
                 >
                   <Text style={[styles.appleSignOutText, { color: theme.subtitle }]}>
                     {t('sign_out')}
+                  </Text>
+                  <Text style={[styles.appleSignOutArrow, { color: theme.placeholder }]}>›</Text>
+                </TouchableOpacity>
+
+                {/* Delete Account row — Apple Guideline 5.1.1(v): apps that create
+                    an account MUST offer in-app account deletion (not just sign-out). */}
+                <TouchableOpacity
+                  style={[styles.appleDeleteRow, { borderTopColor: theme.borderLight }]}
+                  onPress={handleDeleteAccount}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.appleDeleteText, { color: theme.danger || '#E54848' }]}>
+                    {t('delete_account')}
                   </Text>
                   <Text style={[styles.appleSignOutArrow, { color: theme.placeholder }]}>›</Text>
                 </TouchableOpacity>
@@ -2199,6 +2262,18 @@ const styles = StyleSheet.create({
   appleSignOutText: {
     fontSize: FONT_SIZE.md,
     fontWeight: '500',
+  },
+  appleDeleteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    marginTop: SPACING.sm,
+    paddingTop: SPACING.sm,
+  },
+  appleDeleteText: {
+    fontSize: FONT_SIZE.md,
+    fontWeight: '700',
   },
   appleSignOutArrow: {
     fontSize: FONT_SIZE.lg,

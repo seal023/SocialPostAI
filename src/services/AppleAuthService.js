@@ -168,6 +168,40 @@ export async function signOutApple() {
 }
 
 /**
+ * Delete the user's account and ALL associated local data.
+ *
+ * Apple Guideline 5.1.1(v) requires apps that support account creation to
+ * offer an in-app account-deletion path — signing out is NOT sufficient.
+ * This app has NO cloud backend (all state lives in AsyncStorage), so deleting
+ * the account means wiping every `@SocialPostAI:*` key on the device: Apple
+ * credentials, subscription/receipt cache, Pro status, history, favorites,
+ * brand voice, preferences, diagnostics, etc. This is a full, irreversible
+ * reset that returns the app to a first-launch state.
+ *
+ * Note: an active App Store subscription is managed by Apple, not by this
+ * local data; deletion does NOT cancel it. The caller must surface that to the
+ * user (see delete_account_confirm copy).
+ *
+ * @returns {Promise<{success: boolean, cleared?: number, error?: string}>}
+ */
+export async function deleteAppleAccount() {
+  try {
+    const allKeys = await AsyncStorage.getAllKeys();
+    const appKeys = (allKeys || []).filter(
+      (k) => typeof k === 'string' && k.startsWith('@SocialPostAI:')
+    );
+    if (appKeys.length > 0) {
+      await AsyncStorage.multiRemove(appKeys);
+    }
+    console.log('[AppleAuth] Account deleted, cleared local keys:', appKeys.length);
+    return { success: true, cleared: appKeys.length };
+  } catch (error) {
+    console.error('[AppleAuth] Delete account failed:', error);
+    return { success: false, error: error?.message || 'Delete account failed' };
+  }
+}
+
+/**
  * Get the Apple ID user identifier (for unique user identification).
  * @returns {Promise<string|null>}
  */

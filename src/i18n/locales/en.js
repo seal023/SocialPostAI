@@ -406,6 +406,12 @@ const en = {
   plan_tag_trial: 'Trial',
   plan_tag_free: 'Not subscribed',
   welcome_back: 'Welcome back!',
+  delete_account: 'Delete Account',
+  delete_account_title: 'Delete Account',
+  delete_account_confirm: 'Deleting your account permanently erases ALL local data on this device (history, favorites, brand voice, subscription & Pro status, and Apple sign-in info). This cannot be undone.\n\nNote: your App Store auto-renewable subscription is NOT cancelled automatically — manage it yourself in iPhone Settings → Apple ID → Subscriptions.',
+  delete_account_confirm_action: 'Continue Deletion',
+  delete_account_confirm_final: 'Final confirmation: this action is irreversible. All local data will be permanently deleted and the app returns to its first-launch state.',
+  delete_account_done: 'Account deleted',
 
   // Login screen
   login_title: 'SocialPost AI',

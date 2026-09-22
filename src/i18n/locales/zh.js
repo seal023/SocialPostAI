@@ -406,6 +406,12 @@ const zh = {
   plan_tag_trial: '试用中',
   plan_tag_free: '未订阅',
   welcome_back: '欢迎回来！',
+  delete_account: '删除账户',
+  delete_account_title: '删除账户',
+  delete_account_confirm: '删除账户将永久清除本机上的所有数据（历史记录、收藏、品牌音色、订阅与 Pro 状态、Apple 登录信息），且不可恢复。\n\n注意：您在 App Store 的自动续订订阅不会被自动取消，需在 iPhone「设置 → Apple ID → 订阅」中自行管理。',
+  delete_account_confirm_action: '继续删除',
+  delete_account_confirm_final: '请再次确认：此操作不可撤销。所有本地数据将被永久删除，应用将回到首次启动状态。',
+  delete_account_done: '账户已删除',
 
   // Login screen
   login_title: 'SocialPost AI',

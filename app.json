@@ -42,7 +42,15 @@
       "expo-image-picker",
       "expo-apple-authentication",
       "expo-status-bar",
-      "react-native-iap"
+      "react-native-iap",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "enableSceneSupport": true
+          }
+        }
+      ]
     ],
     "owner": "xing_yufei"
   }

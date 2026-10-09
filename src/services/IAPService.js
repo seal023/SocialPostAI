@@ -413,6 +413,23 @@ function boundedNativeCall(promise, ms, code, label) {
 }
 
 /**
+ * Pause between product-fetch attempts.
+ *
+ * WHY (2026-10-09, reproduced on device): on a FRESH install/launch the FIRST
+ * `getSubscriptions()` is genuinely slow — StoreKit has to fetch/validate the app
+ * receipt and resolve the storefront before `Product.products(for:)` can answer.
+ * Firing the retry the instant the first attempt times out means it races the
+ * still-running first request: react-native-iap's Sk1 module holds a SINGLE
+ * productsRequest / latest-promise slot (see the note above), so an immediate
+ * second call can clobber the first one's slot and time out too. The observed
+ * user-visible symptom was: first tap on Subscribe → "Cannot Reach the App Store"
+ * (timeout), second tap moments later → succeeds. A short, deliberate gap lets
+ * that already-in-flight request finish and warm the native cache instead.
+ */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const FETCH_RETRY_GAP_MS = 1200;
+
+/**
  * Fetch subscription product details from StoreKit / Google Play.
  * @returns {Promise<Array>} Array of product objects with price, title, etc.
  */
@@ -470,7 +487,10 @@ export async function fetchProducts({ retries = 1, timeoutMs = FETCH_TIMEOUT_MS 
             attempts,
           };
           lastError = null;
-          if (attempt < maxAttempts) continue;
+          if (attempt < maxAttempts) {
+            await sleep(FETCH_RETRY_GAP_MS);
+            continue;
+          }
           console.warn('[IAP] StoreKit answered with 0 products for every requested ID');
           return [];
         }
@@ -512,7 +532,11 @@ export async function fetchProducts({ retries = 1, timeoutMs = FETCH_TIMEOUT_MS 
         lastError = error;
         console.warn(`[IAP] Fetch attempt ${attempt}/${maxAttempts} failed:`,
           error?.code, error?.message);
-        if (attempt < maxAttempts) continue;
+        if (attempt < maxAttempts) {
+          // Let the previous (still in-flight) native request settle — see sleep().
+          await sleep(FETCH_RETRY_GAP_MS);
+          continue;
+        }
       }
     }
 

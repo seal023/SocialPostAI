@@ -349,6 +349,10 @@ const en = {
   purchase_incomplete_desc: 'The payment flow returned, but Apple did not confirm a completed purchase, so Pro was not unlocked. If you were already charged, tap "Restore Purchases"; otherwise please try again.',
   purchase_no_account_title: 'Cannot Reach the App Store',
   purchase_no_account_desc: 'This device is not signed in to an App Store account, or the App Store cannot be reached. Go to Settings → App Store and sign in with your Apple ID, then try again.',
+  // Shown when StoreKit WAS reachable (the storefront resolved) but the product
+  // request timed out anyway — a slow/cold start, not a missing account.
+  purchase_store_slow_title: 'The App Store Is Slow to Respond',
+  purchase_store_slow_desc: 'The App Store did not finish responding in time (the first connection is usually the slowest). Please wait a few seconds and tap Subscribe again.',
   restore_success_title: 'Purchases Restored',
   restore_success_desc: 'Your Pro subscription has been successfully restored.',
   restore_failed_title: 'Restore Failed',

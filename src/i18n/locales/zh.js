@@ -349,6 +349,12 @@ const zh = {
   purchase_incomplete_desc: '支付流程已返回，但 Apple 未确认本次购买成功，Pro 权限未解锁。若你已被扣款，请点击「恢复购买」；否则请稍后重试。',
   purchase_no_account_title: '无法连接 App Store',
   purchase_no_account_desc: '当前设备未登录 App Store 账号，或无法连接 App Store。请先前往「设置 → App Store」登录你的 Apple ID，再回来购买。',
+  // Shown when StoreKit WAS reachable (storefront resolved) but the product
+  // request timed out anyway — i.e. a slow/cold start, NOT a missing account.
+  // Telling the user to go sign in when they already are sends them chasing a
+  // setting that is already correct.
+  purchase_store_slow_title: 'App Store 响应较慢',
+  purchase_store_slow_desc: 'App Store 暂时没有响应完成（首次连接通常较慢）。请稍等几秒后再次点击订阅即可。',
   restore_success_title: '恢复成功',
   restore_success_desc: '您的 Pro 订阅已成功恢复。',
   restore_failed_title: '恢复失败',

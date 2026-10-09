@@ -40,7 +40,7 @@ import {
   manageSubscriptions,
   PRODUCT_IDS,
 } from '../utils/subscription';
-import { baseProductId, isUserCancelled, getLastEntitlementResult } from '../services/IAPService';
+import { baseProductId, isUserCancelled, getLastEntitlementResult, fetchStorefront } from '../services/IAPService';
 import { useLanguage } from '../context/LanguageContext';
 import { signInWithApple, signOutApple, deleteAppleAccount, getAppleAuthState, isAppleAuthAvailable } from '../services/AppleAuthService';
 import { getPermissions } from '../utils/permissions';
@@ -85,6 +85,19 @@ function formatLocalizedAmount(localizedPrice, amount) {
   if (!symbol) return value;
   // Keep the marker on whichever side StoreKit put it.
   return /^\d/.test(trimmed) ? `${value} ${symbol}` : `${symbol}${value}`;
+}
+
+// ---- "StoreKit never answered the product request" detector ----------------
+// Distinct from "Apple answered and refused the purchase". IAPService composes
+// the fetch diagnostic INTO the PRODUCT_NOT_FOUND payload (see the
+// fetchCause/hint block in purchaseSubscription), so matching that text is how
+// we tell a cold-start timeout apart from a real product/configuration error —
+// and both the silent retry below and the alert wording depend on it.
+const STORE_FETCH_TIMEOUT_RE = /E_FETCH_TIMEOUT|did not settle|StoreKit 无响应/;
+
+function isStoreFetchTimeoutFailure(result) {
+  return !!result && result.success === false
+    && STORE_FETCH_TIMEOUT_RE.test(String(result.message || ''));
 }
 
 // Fallback values used until products are fetched
@@ -167,6 +180,14 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
   // Guards the "欢迎 Pro" welcome alert so it shows at most once per session,
   // even if the subscription event fires more than once (purchase + restore).
   const proWelcomeShownRef = useRef(false);
+  // Mirrors `showSubscription` so an async handler can tell whether the paywall
+  // is still open. Needed by the cold-StoreKit silent retry in handlePurchase:
+  // that retry fires ~1.5s after a long timeout and must NOT open Apple's
+  // payment sheet if the user already dismissed the paywall in the meantime.
+  const paywallOpenRef = useRef(false);
+  useEffect(() => {
+    paywallOpenRef.current = showSubscription;
+  }, [showSubscription]);
 
   // Check Apple ID login status and permissions on mount
   useEffect(() => {
@@ -448,8 +469,31 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
     const attemptAt = Date.now();
     try {
       console.log('[ProfileScreen] Calling purchasePro...');
-      const result = await purchasePro(tier.productId);
+      let result = await purchasePro(tier.productId);
       console.log('[ProfileScreen] purchasePro result:', result);
+
+      // ── Cold-StoreKit guard ────────────────────────────────────────────────
+      // On a fresh install/launch the FIRST product request is genuinely slow:
+      // StoreKit must fetch/validate the app receipt and resolve the storefront
+      // before `Product.products(for:)` can answer. So a first tap can time out
+      // through no fault of the user, and an identical second tap moments later
+      // succeeds — observed on device as "first tap → Cannot Reach the App
+      // Store, second tap → purchase sheet opens". StoreKit 2 also refuses to
+      // open the sheet for an SKU that is absent from its native product cache,
+      // so a timed-out fetch cannot buy anything anyway: retrying is the only
+      // way forward, not a way around a real error. Do it ONCE, silently, so
+      // neither a user nor an App Store reviewer sees a scary alert on the very
+      // first tap.
+      if (isStoreFetchTimeoutFailure(result) && paywallOpenRef.current) {
+        console.log('[ProfileScreen] StoreKit product request timed out (cold start?) — retrying once silently…');
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        // The user may have dismissed the paywall during that wait — never open
+        // Apple's payment sheet behind a screen they already closed.
+        if (paywallOpenRef.current) {
+          result = await purchasePro(tier.productId);
+          console.log('[ProfileScreen] purchasePro retry result:', result);
+        }
+      }
 
       if (!result.success) {
         if (result.error === 'IAP_NOT_AVAILABLE') {
@@ -461,8 +505,23 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
           // StoreKit never answered (device has no App Store account / storefront
           // mismatch / no network) → the raw PRODUCT_NOT_FOUND payload embeds the
           // whole fetch diagnostic. Show the short, actionable version instead.
-          if (/E_FETCH_TIMEOUT|StoreKit 无响应|did not settle/.test(String(result.message || ''))) {
-            Alert.alert(t('purchase_no_account_title'), t('purchase_no_account_desc'));
+          if (isStoreFetchTimeoutFailure(result)) {
+            // Distinguish "the store is genuinely unreachable" from "the store
+            // IS reachable but answered too slowly". Blaming the account when
+            // the device is signed in — and latency was the only real problem —
+            // sends the user (and a reviewer) chasing a setting that is already
+            // correct. getStorefront() hits the StoreKit storefront API, so a
+            // country code here proves the StoreKit ↔ App Store path works.
+            let storefrontOk = false;
+            try {
+              const sf = await fetchStorefront();
+              storefrontOk = !!(sf && sf.ok);
+            } catch (e) {}
+            if (storefrontOk) {
+              Alert.alert(t('purchase_store_slow_title'), t('purchase_store_slow_desc'));
+            } else {
+              Alert.alert(t('purchase_no_account_title'), t('purchase_no_account_desc'));
+            }
           } else {
             Alert.alert(
               t('purchase_failed_title'),

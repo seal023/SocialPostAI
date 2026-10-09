@@ -155,6 +155,15 @@ const STYLE_KEY_MAP = {
 export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSignOut }) {
   const theme = getTheme(themeName);
   const { t, language, setLanguage } = useLanguage();
+  // Explicit acknowledgement button for every Alert on this screen.
+  //
+  // WHY: React Native's Alert.alert(title, message) WITHOUT a buttons array makes
+  // iOS supply its own default button ("OK"), and iOS localises that string
+  // against the DEVICE language — not our in-app language. On a Chinese device
+  // with the app set to English this produced "English dialog + 好" (reported
+  // 2026-10-09). Passing our own text ({ text: t('ok') }) keeps it consistent
+  // with the interface language the user actually selected.
+  const okButton = [{ text: t('ok') }];
   const [stats, setStats] = useState({ today: 0, month: 0, total: 0 });
   const [favorites, setFavorites] = useState([]);
   const [showFavorites, setShowFavorites] = useState(false);
@@ -458,7 +467,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
     }
     if (ownsPro) {
       setShowSubscription(false);
-      Alert.alert(t('already_subscribed_title'), t('already_subscribed_desc'));
+      Alert.alert(t('already_subscribed_title'), t('already_subscribed_desc'), okButton);
       return;
     }
 
@@ -500,6 +509,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
           Alert.alert(
             t('iap_not_available_title'),
             t('iap_not_available_desc'),
+            okButton,
           );
         } else if (!isUserCancelled({ code: result.error, message: result.message })) {
           // StoreKit never answered (device has no App Store account / storefront
@@ -518,14 +528,15 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
               storefrontOk = !!(sf && sf.ok);
             } catch (e) {}
             if (storefrontOk) {
-              Alert.alert(t('purchase_store_slow_title'), t('purchase_store_slow_desc'));
+              Alert.alert(t('purchase_store_slow_title'), t('purchase_store_slow_desc'), okButton);
             } else {
-              Alert.alert(t('purchase_no_account_title'), t('purchase_no_account_desc'));
+              Alert.alert(t('purchase_no_account_title'), t('purchase_no_account_desc'), okButton);
             }
           } else {
             Alert.alert(
               t('purchase_failed_title'),
               result.message || t('purchase_failed_desc'),
+              okButton,
             );
           }
         }
@@ -576,7 +587,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
         setShowSubscription(false);
         if (!proWelcomeShownRef.current) {
           proWelcomeShownRef.current = true;
-          Alert.alert('✅ ' + t('purchase_success_title'), t('purchase_success_desc'));
+          Alert.alert('✅ ' + t('purchase_success_title'), t('purchase_success_desc'), okButton);
         }
       } else if (verified || subState.status === 'pro') {
         // The user already owns an active subscription — nothing new was bought.
@@ -584,16 +595,16 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
         // purchase. Pro IS still valid until its expiry date even when auto-renew
         // was cancelled, so the Pro UI on the other tabs is correct.
         setShowSubscription(false);
-        Alert.alert(t('already_subscribed_title'), t('already_subscribed_desc'));
+        Alert.alert(t('already_subscribed_title'), t('already_subscribed_desc'), okButton);
       } else {
         // The sheet flow returned but Apple confirms NOTHING was purchased — do
         // NOT claim success. Say so plainly so the user can retry / restore
         // instead of believing they are Pro while features stay locked.
-        Alert.alert(t('purchase_incomplete_title'), t('purchase_incomplete_desc'));
+        Alert.alert(t('purchase_incomplete_title'), t('purchase_incomplete_desc'), okButton);
       }
     } catch (error) {
       console.error('[ProfileScreen] Purchase error:', error);
-      Alert.alert(t('purchase_failed_title'), t('purchase_failed_desc'));
+      Alert.alert(t('purchase_failed_title'), t('purchase_failed_desc'), okButton);
     } finally {
       setIsPurchasing(false);
     }
@@ -611,7 +622,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
         await Linking.openURL(APP_STORE_URL);
       }
     } catch (e) {
-      Alert.alert(t('rate_app'), t('rate_store_unavailable'));
+      Alert.alert(t('rate_app'), t('rate_store_unavailable'), okButton);
     }
   };
 
@@ -629,6 +640,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
         Alert.alert(
           t('manage_subscription_failed_title'),
           t('manage_subscription_failed_desc'),
+          okButton,
         );
       }
     } catch (e) {
@@ -636,6 +648,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
       Alert.alert(
         t('manage_subscription_failed_title'),
         t('manage_subscription_failed_desc'),
+        okButton,
       );
     }
   };
@@ -699,7 +712,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
               await resetDailyUsage();
               const newSubState = await getSubscriptionState();
               setSubscriptionState(newSubState);
-              Alert.alert(t('dev_reset_done'));
+              Alert.alert(t('dev_reset_done'), undefined, okButton);
             } catch (e) {
               console.error('[ProfileScreen] resetDailyUsage failed:', e);
             }
@@ -712,7 +725,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
               await resetTrialForTesting();
               const newSubState = await getSubscriptionState();
               setSubscriptionState(newSubState);
-              Alert.alert(t('dev_reset_done'));
+              Alert.alert(t('dev_reset_done'), undefined, okButton);
             } catch (e) {
               console.error('[ProfileScreen] resetTrialForTesting failed:', e);
             }
@@ -728,9 +741,9 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
     const result = await signInWithApple();
     if (result.success) {
       setAppleUser(result.user);
-      Alert.alert('✅ ' + t('welcome_back'), '');
+      Alert.alert('✅ ' + t('welcome_back'), '', okButton);
     } else if (result.error !== 'cancelled') {
-      Alert.alert(t('apple_sign_in_failed'));
+      Alert.alert(t('apple_sign_in_failed'), undefined, okButton);
     }
   };
 
@@ -807,7 +820,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
                       // best-effort
                     }
                     if (res.success) {
-                      Alert.alert('✅ ' + t('delete_account_done'));
+                      Alert.alert('✅ ' + t('delete_account_done'), undefined, okButton);
                     }
                     // Hand control back to App.js login gate — deleting the account
                     // must return the app to a first-launch (signed-out) state.
@@ -1017,7 +1030,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
             if (permissions?.canUseBrandVoice) {
               setShowBrandVoice(true);
             } else {
-              Alert.alert(t('locked'), t('feature_locked_upgrade'));
+              Alert.alert(t('locked'), t('feature_locked_upgrade'), okButton);
             }
           }}
         >
@@ -1153,7 +1166,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
             item={{ id: 'contact', icon: '📧', titleKey: 'contact_us' }}
             isLast={false}
             theme={theme}
-            onPress={() => Alert.alert(t('contact_us'), t('contact_desc'))}
+            onPress={() => Alert.alert(t('contact_us'), t('contact_desc'), okButton)}
             t={t}
           />
           {TEST_TOOLS_ENABLED && (
@@ -1411,7 +1424,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
                     {row.hasInfo && (
                       <TouchableOpacity
                         activeOpacity={0.6}
-                        onPress={() => Alert.alert(t('history_info_title'), t('history_info_desc'))}
+                        onPress={() => Alert.alert(t('history_info_title'), t('history_info_desc'), okButton)}
                         hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
                         style={{ marginLeft: 4 }}
                       >

@@ -1003,12 +1003,13 @@ export default function CulturalCheck({ text, themeName = 'pink', onApply }) {
     // Nothing deterministic to do → still tell the user what to fix
     if (previewLines.length === 0) {
       if (manualLines.length === 0) {
-        Alert.alert(t('cultural_no_change'));
+        Alert.alert(t('cultural_no_change'), undefined, [{ text: t('ok') }]);
         return;
       }
       Alert.alert(
         t('cultural_manual_title'),
-        `${t('cultural_manual_desc')}\n\n${manualLines.join('\n')}`
+        `${t('cultural_manual_desc')}\n\n${manualLines.join('\n')}`,
+        [{ text: t('ok') }]
       );
       return;
     }

@@ -116,7 +116,7 @@ export default function HistoryScreen({ themeName = 'pink' }) {
       .map((i) => `[${i.topic}]\n${Object.values(i.results || {}).join('\n')}`)
       .join('\n\n---\n\n');
     await Clipboard.setStringAsync(text);
-    Alert.alert('✅ ' + t('copied'), `${items.length} ${t('items')} ${t('copied').toLowerCase()}`);
+    Alert.alert('✅ ' + t('copied'), `${items.length} ${t('items')} ${t('copied').toLowerCase()}`, [{ text: t('ok') }]);
     setSelectedIds(new Set());
     setIsSelectMode(false);
   };
@@ -130,7 +130,7 @@ export default function HistoryScreen({ themeName = 'pink' }) {
     });
 
     if (deletableIds.length === 0) {
-      Alert.alert(t('delete'), '选中的历史记录均已收藏，无法删除。');
+      Alert.alert(t('delete'), '选中的历史记录均已收藏，无法删除。', [{ text: t('ok') }]);
       return;
     }
 
@@ -154,12 +154,12 @@ export default function HistoryScreen({ themeName = 'pink' }) {
     const unfavoritedCount = history.filter((i) => !i.isFavorite).length;
 
     if (history.length === 0) {
-      Alert.alert(t('history'), '暂无历史记录。');
+      Alert.alert(t('history'), '暂无历史记录。', [{ text: t('ok') }]);
       return;
     }
 
     if (unfavoritedCount === 0) {
-      Alert.alert(t('history'), '所有历史记录已收藏，无需清空。');
+      Alert.alert(t('history'), '所有历史记录已收藏，无需清空。', [{ text: t('ok') }]);
       return;
     }
 
@@ -172,7 +172,7 @@ export default function HistoryScreen({ themeName = 'pink' }) {
           const result = await clearHistory();
           setHistory(result.keptCount > 0 ? history.filter((i) => i.isFavorite) : []);
           if (result.keptCount > 0) {
-            Alert.alert('已清空', `已删除 ${result.deletedCount} 条记录，保留 ${result.keptCount} 条收藏。`);
+            Alert.alert('已清空', `已删除 ${result.deletedCount} 条记录，保留 ${result.keptCount} 条收藏。`, [{ text: t('ok') }]);
           }
         },
       },
@@ -182,7 +182,7 @@ export default function HistoryScreen({ themeName = 'pink' }) {
   // ---- Favorite toggle ----
   const handleFavorite = async (item) => {
     if (permissions && !permissions.canFavorite) {
-      Alert.alert(t('locked'), t('feature_locked_upgrade'));
+      Alert.alert(t('locked'), t('feature_locked_upgrade'), [{ text: t('ok') }]);
       return;
     }
     await toggleFavorite(item.id);
@@ -193,7 +193,7 @@ export default function HistoryScreen({ themeName = 'pink' }) {
   // ---- Single copy ----
   const handleCopy = async (text) => {
     await Clipboard.setStringAsync(text);
-    Alert.alert('✅ ' + t('copied'), t('copied_to_clipboard'));
+    Alert.alert('✅ ' + t('copied'), t('copied_to_clipboard'), [{ text: t('ok') }]);
   };
 
   // ---- Item press ----

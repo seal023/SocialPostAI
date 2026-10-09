@@ -430,6 +430,15 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const FETCH_RETRY_GAP_MS = 1200;
 
 /**
+ * How long a SUCCESSFUL catalog fetch keeps counting as "the native product
+ * cache is already warm". Mirrors the CATALOG_FRESH_MS reuse window that
+ * purchaseSubscription() already applies to `lastFetchResult`, and is shared by
+ * syncEntitlement() so a pre-purchase reconcile does not re-hit the network for
+ * a catalog it fetched seconds ago.
+ */
+const CATALOG_WARM_MS = 120000;
+
+/**
  * Fetch subscription product details from StoreKit / Google Play.
  * @returns {Promise<Array>} Array of product objects with price, title, etc.
  */
@@ -895,7 +904,28 @@ export async function syncEntitlement(reason = 'manual') {
   }
 
   // Warm the native product cache (see the Sk2 note above). Best-effort.
-  try { await fetchProducts({ retries: 0, timeoutMs: FETCH_RETRY_TIMEOUT_MS }); } catch (e) { /* ignore */ }
+  //
+  // 2026-10-09: skip the warm-up entirely when we ALREADY have a recent
+  // successful fetch. StoreKit 2's getItems() re-hits the network on every call
+  // (~9s, and far worse on TestFlight / sandbox), so re-fetching right before a
+  // purchase only adds latency and one more chance to time out — the same
+  // reasoning that already makes purchaseSubscription() Step 2 reuse
+  // `lastFetchResult` inside CATALOG_FRESH_MS. Before this, tapping Subscribe on
+  // an otherwise warm store paid the full warm-up AGAIN on top of the purchase
+  // path's own fetch; on device that was the single largest block of the
+  // "why does buying take so long" complaint (first tap → minutes of nothing).
+  // Safe: the native `productStore` cache is filled by that same successful
+  // getItems(), and anything older than CATALOG_WARM_MS still warms normally.
+  const catalogFresh =
+    !!lastFetchResult && lastFetchResult.ok === true &&
+    lastFetchedProductIds.length > 0 &&
+    Date.now() - (lastFetchResult.at || 0) < CATALOG_WARM_MS;
+  if (catalogFresh) {
+    console.log('[IAP] Entitlement check: reusing recent successful catalog fetch '
+      + `(age ${Date.now() - lastFetchResult.at}ms) — skipping cache warm-up`);
+  } else {
+    try { await fetchProducts({ retries: 0, timeoutMs: FETCH_RETRY_TIMEOUT_MS }); } catch (e) { /* ignore */ }
+  }
 
   // --------------------------------------------------------------------------
   // AUTHORITATIVE check — only CURRENTLY ACTIVE, Apple-verified entitlements.

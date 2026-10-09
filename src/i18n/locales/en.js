@@ -91,6 +91,12 @@ const en = {
   deselect_all: 'Deselect All',
   delete: 'Delete',
   cancel: 'Cancel',
+  // Default acknowledgement button. RN's Alert.alert() without an explicit
+  // buttons array falls back to a NATIVE default button ("OK") localised by iOS
+  // against the DEVICE language — which is how an English UI ended up showing a
+  // Chinese "好". Always pass { text: t('ok') } so the button follows the in-app
+  // language instead of the device one.
+  ok: 'OK',
   confirm_delete: 'Confirm Delete',
   delete_count: 'Delete {count} selected records?',
   clear_all: 'Clear All',

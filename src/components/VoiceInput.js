@@ -186,13 +186,13 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
   const showVoiceError = useCallback((titleKey, detail) => {
     if (alertShownRef.current) return;
     alertShownRef.current = true;
-    Alert.alert(t(titleKey), detail);
+    Alert.alert(t(titleKey), detail, [{ text: t('ok') }]);
   }, [t]);
 
   // ── WebSocket connect + run-task ──────────────────────────
   const connectAndStartTask = useCallback(async () => {
     if (!ASR_API_KEY) {
-      Alert.alert(t('voice_error'), t('voice_no_api_key'));
+      Alert.alert(t('voice_error'), t('voice_no_api_key'), [{ text: t('ok') }]);
       return false;
     }
 
@@ -373,7 +373,7 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
         Alert.alert(
           t('voice_unavailable_title') || 'Voice Input Unavailable',
           t('voice_unavailable_desc') || 'Voice input is temporarily unavailable in this build. Please type your topic using the keyboard.',
-          [{ text: 'OK' }]
+          [{ text: t('ok') }]
         );
         return;
       }
@@ -381,13 +381,13 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
       // 1. Request microphone permission
       const { status } = await requestRecordingPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert(t('voice_permission_denied'), t('voice_permission_desc'));
+        Alert.alert(t('voice_permission_denied'), t('voice_permission_desc'), [{ text: t('ok') }]);
         return;
       }
 
       // 2. Check API key
       if (!ASR_API_KEY) {
-        Alert.alert(t('voice_error'), t('voice_no_api_key'));
+        Alert.alert(t('voice_error'), t('voice_no_api_key'), [{ text: t('ok') }]);
         return;
       }
 
@@ -467,11 +467,11 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
       setOverlayVisible(false);
       const errMsg = error?.message || String(error);
       if (errMsg.includes('permission') || errMsg.includes('Permission')) {
-        Alert.alert(t('voice_permission_denied'), t('voice_permission_desc'));
+        Alert.alert(t('voice_permission_denied'), t('voice_permission_desc'), [{ text: t('ok') }]);
       } else if (errMsg.includes('WebSocket')) {
-        Alert.alert(t('voice_error'), t('voice_ws_error'));
+        Alert.alert(t('voice_error'), t('voice_ws_error'), [{ text: t('ok') }]);
       } else {
-        Alert.alert(t('voice_error'), t('voice_error_desc'));
+        Alert.alert(t('voice_error'), t('voice_error_desc'), [{ text: t('ok') }]);
       }
     }
   }, [stream, connectAndStartTask, cleanupWebSocket, t]);
@@ -508,7 +508,7 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
       if (transcript.trim()) {
         onResult?.(transcript.trim());
       } else {
-        Alert.alert(t('voice_error'), t('voice_no_speech'));
+        Alert.alert(t('voice_error'), t('voice_no_speech'), [{ text: t('ok') }]);
       }
     } catch (error) {
       console.error('[VoiceInput] Stop recording failed:', error);
@@ -517,7 +517,7 @@ export default function VoiceInput({ themeName = 'pink', onResult, language = 'e
       setIsProcessing(false);
       setInterimText('');
       setFinalText('');
-      Alert.alert(t('voice_error'), t('voice_error_desc'));
+      Alert.alert(t('voice_error'), t('voice_error_desc'), [{ text: t('ok') }]);
     }
   }, [stream, isStreaming, sendFinishTask, cleanupWebSocket, onResult, t]);
 

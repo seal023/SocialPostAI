@@ -250,11 +250,11 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
   // ---- Generate copy ----
   const handleGenerate = useCallback(async () => {
     if (!topic.trim()) {
-      Alert.alert(t('missing_topic'), t('missing_topic_desc'));
+      Alert.alert(t('missing_topic'), t('missing_topic_desc'), [{ text: t('ok') }]);
       return;
     }
     if (selectedPlatforms.length === 0) {
-      Alert.alert(t('no_platform'), t('no_platform_desc'));
+      Alert.alert(t('no_platform'), t('no_platform_desc'), [{ text: t('ok') }]);
       return;
     }
     if (remainingCount <= 0) {
@@ -273,7 +273,7 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
               const sub = await getSubscriptionState();
               setSubscriptionState(sub);
               setRemainingCount(await getRemainingCount());
-              Alert.alert(t('dev_reset_done'));
+              Alert.alert(t('dev_reset_done'), undefined, [{ text: t('ok') }]);
             } catch (e) {
               console.warn('[GenerateScreen] dev quota reset failed:', e);
             }
@@ -372,7 +372,7 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
       setDrawerVisible(true);
       setRemainingCount((prev) => Math.max(0, prev - 1));
 
-      Alert.alert(t('generation_failed'), t('generation_failed_desc'));
+      Alert.alert(t('generation_failed'), t('generation_failed_desc'), [{ text: t('ok') }]);
     } finally {
       setIsGenerating(false);
     }
@@ -383,7 +383,7 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
     if (!result) return;
     // Check feature lock for free users
     if (subscriptionState.status === 'free') {
-      Alert.alert(t('pro_feature_lock'), t('pro_feature_lock_desc'));
+      Alert.alert(t('pro_feature_lock'), t('pro_feature_lock_desc'), [{ text: t('ok') }]);
       return;
     }
     await toggleFavorite(result.id);
@@ -392,6 +392,7 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
     Alert.alert(
       result.isFavorite ? t('unfavorited') : t('favorited'),
       result.isFavorite ? t('removed_from_favorites') : t('added_to_favorites'),
+      [{ text: t('ok') }],
     );
     const updatedHistory = await getHistory();
     setHistory(updatedHistory);
@@ -401,7 +402,7 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
   const handleSave = async (data) => {
     if (data && data.id) {
       await updateHistory(data.id, { text: data.editedText });
-      Alert.alert('✅ ' + t('saved'), t('copy_saved'));
+      Alert.alert('✅ ' + t('saved'), t('copy_saved'), [{ text: t('ok') }]);
     }
     setDrawerVisible(false);
     const updatedHistory = await getHistory();
@@ -603,7 +604,7 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
                     fallback={
                       <TouchableOpacity
                         style={[styles.inputActionBtn, { opacity: 0.4 }]}
-                        onPress={() => Alert.alert(t('voice_error'), t('voice_error_desc'))}
+                        onPress={() => Alert.alert(t('voice_error'), t('voice_error_desc'), [{ text: t('ok') }])}
                       >
                         <Text style={styles.inputActionIcon}>🎤</Text>
                       </TouchableOpacity>
@@ -618,7 +619,7 @@ export default function GenerateScreen({ themeName = 'pink', navigation }) {
                 ) : (
                   <TouchableOpacity
                     style={[styles.inputActionBtn, { opacity: 0.4 }]}
-                    onPress={() => Alert.alert(t('locked'), t('feature_locked_upgrade'))}
+                    onPress={() => Alert.alert(t('locked'), t('feature_locked_upgrade'), [{ text: t('ok') }])}
                   >
                     <Text style={styles.inputActionIcon}>🎤</Text>
                   </TouchableOpacity>

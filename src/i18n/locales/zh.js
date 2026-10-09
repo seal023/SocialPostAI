@@ -91,6 +91,10 @@ const zh = {
   deselect_all: '取消全选',
   delete: '删除',
   cancel: '取消',
+  // 默认确认按钮。Alert.alert() 不传 buttons 时会用 iOS 原生默认按钮，其文案按
+  // **设备系统语言**本地化 —— 于是英文界面出现了中文「好」。统一显式传
+  // { text: t('ok') }，让按钮跟随 App 内语言。
+  ok: '好',
   confirm_delete: '确认删除',
   delete_count: '删除 {count} 条选中记录？',
   clear_all: '清空全部',

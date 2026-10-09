@@ -71,6 +71,7 @@ export default function BrandVoiceScreen({ themeName = 'pink', onBack }) {
       Alert.alert(
         t('need_more_samples'),
         t('need_more_desc', { count: MIN_SAMPLES, current: validSamples.length }),
+        [{ text: t('ok') }],
       );
       return;
     }
@@ -88,9 +89,10 @@ export default function BrandVoiceScreen({ themeName = 'pink', onBack }) {
       Alert.alert(
         t('brand_voice_saved'),
         t('brand_voice_saved_desc', { count: validSamples.length }),
+        [{ text: t('ok') }],
       );
     } catch (error) {
-      Alert.alert(t('save_failed'), t('save_failed_desc'));
+      Alert.alert(t('save_failed'), t('save_failed_desc'), [{ text: t('ok') }]);
     } finally {
       setIsSaving(false);
     }

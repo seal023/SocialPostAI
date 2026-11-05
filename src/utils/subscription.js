@@ -453,7 +453,7 @@ function getFallbackProducts() {
 
 /**
  * Initiate a Pro subscription purchase.
- * @param {string} productId - 'com.seal023.socialpostai.monthly' or 'com.seal023.socialpostai.annual'
+ * @param {string} productId - 'com.seal023.socialpostai.monthly.v3' or 'com.seal023.socialpostai.annual.v3'
  * @returns {Promise<{success: boolean, error?: string}>}
  */
 export async function purchasePro(productId) {
@@ -468,8 +468,9 @@ export async function purchasePro(productId) {
     }
 
     console.log('[Subscription] Starting purchase for productId:', productId, '| monthly?', isMonthlyProduct(productId), '| annual?', isAnnualProduct(productId));
-    // ASC may expose the .v2-suffixed SKU; resolve to whatever StoreKit returned
-    // so the Apple sheet actually opens (getSubscriptions filters by exact id).
+    // Resolve onto the `.v3` SKU that is actually on sale (a legacy `.v2` or
+    // plain id is mapped forward) so the Apple sheet always names a real
+    // product — getSubscriptions filters by exact id.
     const realSku = resolveProductId(productId);
     console.log('[Subscription] Resolved to real SKU:', realSku);
     await purchaseSubscription(realSku);

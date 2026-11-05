@@ -167,53 +167,64 @@ function loadRNIapModule() {
 }
 
 // ---- Product IDs (must match App Store Connect / Google Play) ----
-// The ASC console historically uses the `.v2`-suffixed product IDs (see the
-// old repo commit 8d18745 "IAPService.js: 订阅 productId 更新为.v2 匹配 ASC").
-// react-native-iap's getSubscriptions() filters returned items by
-// `skus.includes(productId)`, so if ASC only exposes the .v2 IDs while we ask
-// for the plain IDs, every product is silently dropped → 0 products → NO_PRODUCTS.
-// Requesting BOTH plain and .v2 variants makes the screen work regardless of
-// which form ASC actually uses. resolveProductId() then maps a canonical
-// (base) ID to the real SKU StoreKit returned before calling purchaseSubscription.
+// 2026-11-05: the original `.v2` subscriptions were abandoned and rebuilt in
+// ASC as `.v3`. Their promotional image got stuck in WAITING_FOR_REVIEW on
+// Apple's side, could never be removed or replaced (409
+// STATE_ERROR.INVALID_REQUEST_ENTITY_STATE_INVALID / "Cannot delete image,
+// version is not editable"), and therefore blocked Guideline 2.3.2 forever.
+// `.v3` is now the ONLY purchasable SKU. The retired `.v2` products are never
+// requested and never purchased — buying one would attach a dead SKU to the
+// user's Apple ID that the live App Store configuration no longer matches.
 
 export const PRODUCT_IDS = {
-  MONTHLY: 'com.seal023.socialpostai.monthly',
-  ANNUAL: 'com.seal023.socialpostai.annual',
-  MONTHLY_V2: 'com.seal023.socialpostai.monthly.v2',
-  ANNUAL_V2: 'com.seal023.socialpostai.annual.v2',
+  MONTHLY: 'com.seal023.socialpostai.monthly.v3',
+  ANNUAL: 'com.seal023.socialpostai.annual.v3',
 };
 
+// Suffix-free baseline IDs. Used ONLY for identity mapping: `.v3`, the legacy
+// `.v2`, and the plain form all collapse onto the same slot, so an existing
+// sandbox/TestFlight `.v2` subscriber is still recognised as Pro instead of
+// being silently downgraded after this rename.
+const BASE_PRODUCT_IDS = {
+  MONTHLY: 'com.seal023.socialpostai.monthly',
+  ANNUAL: 'com.seal023.socialpostai.annual',
+};
+
+// Request ONLY the SKUs that actually exist in App Store Connect.
 const ALL_PRODUCT_IDS = [
   PRODUCT_IDS.MONTHLY,
   PRODUCT_IDS.ANNUAL,
-  PRODUCT_IDS.MONTHLY_V2,
-  PRODUCT_IDS.ANNUAL_V2,
 ];
 
-// Strip a trailing ".v2" so the UI/price mapping treats
-// com.seal023.socialpostai.monthly and ...monthly.v2 as the same slot.
+// Strip any trailing version suffix (`.v2`, `.v3`, …) to get the product slot.
 export function baseProductId(id) {
-  return (id || '').replace(/\.v2$/, '');
+  return (id || '').replace(/\.v\d+$/, '');
 }
 
 export function isMonthlyProduct(id) {
-  return baseProductId(id) === PRODUCT_IDS.MONTHLY;
+  return baseProductId(id) === BASE_PRODUCT_IDS.MONTHLY;
 }
 
 export function isAnnualProduct(id) {
-  return baseProductId(id) === PRODUCT_IDS.ANNUAL;
+  return baseProductId(id) === BASE_PRODUCT_IDS.ANNUAL;
 }
 
-// Given a canonical (base) productId, return the ACTUAL sku StoreKit returned.
-// Prefers an exact match, then the .v2 variant (when ASC only exposes those),
-// so purchaseSubscription is always called with an ID that exists.
+// Map any accepted input (`.v3`, legacy `.v2`, or the plain base id) onto the
+// SKU that is currently on sale. An exact match against what StoreKit actually
+// returned wins; otherwise `.v3` is the deterministic preference, so the Apple
+// payment sheet is always asked for a product that exists.
 export function resolveProductId(canonicalId) {
   if (!canonicalId) return canonicalId;
   const fetched = lastFetchedProductIds || [];
+  const base = baseProductId(canonicalId);
+  const v3 = `${base}.v3`;
+  // A retired `.v2` id must ALWAYS be mapped forward — never resolve onto it,
+  // even when StoreKit still reports it.
+  if (/\.v2$/.test(canonicalId)) return v3;
   if (fetched.includes(canonicalId)) return canonicalId;
-  const v2 = `${canonicalId}.v2`;
-  if (fetched.includes(v2)) return v2;
-  return canonicalId;
+  if (fetched.includes(v3)) return v3;
+  if (fetched.includes(base)) return base;
+  return v3;
 }
 
 // ---- AsyncStorage keys for receipt caching ----
@@ -617,8 +628,8 @@ export async function fetchStorefront() {
  */
 export async function fetchProduct(productId) {
   const products = await fetchProducts();
-  // Tolerate the `.v2` form: callers pass the canonical ID, StoreKit may return
-  // the `.v2` SKU (or vice versa).
+  // Tolerate any version suffix: callers pass `.v3`, but StoreKit can still
+  // report a legacy `.v2` / plain SKU for an older entitlement.
   return (
     products.find((p) => p.productId === productId) ||
     products.find((p) => baseProductId(p.productId) === baseProductId(productId)) ||
@@ -708,18 +719,23 @@ export async function purchaseSubscription(productId) {
     }
 
     // 3) Resolve which SKU to buy.
-    //    Match exactly first, then fall back to a `.v2`-normalized match so a
-    //    caller passing the canonical ID still resolves when ASC only has the
-    //    .v2 SKU.
+    //    An exact `.v3` match wins over a loose slot match: the retired `.v2`
+    //    products can still be visible to StoreKit, and buying one would attach
+    //    a dead SKU to the user's Apple ID.
+    const v3Sku = `${baseProductId(productId)}.v3`;
     const matched =
+      products.find((p) => p.productId === v3Sku) ||
       products.find((p) => p.productId === productId) ||
       products.find((p) => baseProductId(p.productId) === baseProductId(productId));
 
-    const candidates = [];
+    let candidates = [];
     if (matched) candidates.push(matched.productId);
+    if (!candidates.includes(v3Sku)) candidates.push(v3Sku);
     if (productId && !candidates.includes(productId)) candidates.push(productId);
-    const v2Sku = `${baseProductId(productId)}.v2`;
-    if (!candidates.includes(v2Sku)) candidates.push(v2Sku);
+    // Never purchase a retired `.v2` SKU, even if a stale caller still passes
+    // one in. `.v3` must always remain the first and only attempt.
+    candidates = candidates.filter((c) => !/\.v2$/.test(c));
+    if (!candidates.length) candidates.push(v3Sku);
 
     if (!matched) {
       const lf = lastFetchResult || {};
@@ -1089,7 +1105,7 @@ async function handleSuccessfulPurchase(purchase) {
     await acknowledgePurchase(purchase);
 
     // Reconcile once more. This normalizes the stored product id to the SKU
-    // StoreKit actually knows (base vs `.v2`) so a later currentEntitlements
+    // StoreKit actually knows (`.v3` vs legacy `.v2`) so a later currentEntitlements
     // lookup can always match it, and it covers the "listener fired but the
     // success callback above threw" case.
     try { await syncEntitlement('purchase-success'); } catch (e) { /* non-fatal */ }

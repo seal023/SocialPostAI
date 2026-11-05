@@ -102,7 +102,8 @@ function isStoreFetchTimeoutFailure(result) {
 
 // Fallback values used until products are fetched
 // ⚠️  Product IDs must EXACTLY match App Store Connect configuration.
-//     Current (per Apple review): com.seal023.socialpostai.monthly / com.seal023.socialpostai.annual
+//     Current (2026-11-05): com.seal023.socialpostai.monthly.v3 / com.seal023.socialpostai.annual.v3
+//     (the old .v2 subscriptions were abandoned — see PRODUCT_IDS in IAPService.js)
 //     Trial duration on App Store Connect: 7 days.
 let PROFILE_TIERS = [
   {
@@ -306,14 +307,14 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
         if (products && products.length > 0) {
           // Merge real prices into PROFILE_TIERS
           PROFILE_TIERS = PROFILE_TIERS.map((tier) => {
-            // Match on the NORMALIZED id: StoreKit may return the `.v2` SKU
-            // while the tier is keyed by the canonical id (and vice versa).
-            // A plain `===` here silently failed, so the card kept showing the
-            // hardcoded fallback price — which would not match the amount Apple
-            // actually charges (App Store display rules require it to match).
+            // Match on the NORMALIZED slot: StoreKit returns the `.v3` SKU,
+            // but a legacy `.v2` / plain SKU must still map onto the same card.
+            // A plain `===` here silently failed once, so the card kept showing
+            // the hardcoded fallback price — which would not match the amount
+            // Apple actually charges (App Store display rules require a match).
             const product =
               products.find((p) => p.productId === tier.productId) ||
-              products.find((p) => baseProductId(p.productId) === tier.productId);
+              products.find((p) => baseProductId(p.productId) === baseProductId(tier.productId));
             if (!product) return { ...tier, isLoading: false };
 
             const realPrice = product.localizedPrice || product.price;

@@ -473,11 +473,36 @@ export async function purchasePro(productId) {
     // product — getSubscriptions filters by exact id.
     const realSku = resolveProductId(productId);
     console.log('[Subscription] Resolved to real SKU:', realSku);
-    await purchaseSubscription(realSku);
+    // purchaseSubscription() resolves with the completed transaction when the
+    // store hands one back (StoreKit 2 always does). Forward it: a resolved
+    // transaction IS proof of purchase, and the caller must be able to act on
+    // that without depending on the purchaseUpdatedListener having fired.
+    const purchase = await purchaseSubscription(realSku);
 
-    // Purchase result is delivered asynchronously via callback
-    // The caller should listen for state changes
-    return { success: true };
+    // Belt and braces. The IAPService success callback (registered in
+    // initIAPIntegration) is what normally writes 'pro'. If that callback was
+    // never registered — or threw after the receipt was cached — a genuinely
+    // paid transaction would leave the UI on Free, which is exactly the build-73
+    // symptom. Writing the flag here is idempotent, so the normal path costs
+    // one extra read.
+    if (purchase) {
+      const alreadyPro = await isProUser();
+      if (!alreadyPro) {
+        console.warn('[Subscription] Transaction resolved but status was not Pro — unlocking locally');
+        await saveSubscriptionStatus('pro');
+        try {
+          await saveUserProfile({
+            isPro: true,
+            purchaseDate: purchase.transactionDate || Date.now(),
+          });
+        } catch (e) { /* profile is cosmetic — never block the unlock */ }
+        notifySubscriptionChanged();
+      }
+    }
+
+    // The success callback has already unlocked Pro by this point; the caller
+    // uses `purchase` to tell a real transaction apart from a stale entitlement.
+    return { success: true, purchase: purchase || null };
   } catch (error) {
     console.error('[Subscription] Purchase failed:', error);
     return {

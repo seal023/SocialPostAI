@@ -552,10 +552,27 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
       // 升级 Pro" popped with nothing purchased (2026-09-16).
       //
       // Ask Apple what we own, then decide whether the entitlement is NEW.
+      // The transaction object returned by the native purchase call is the
+      // strongest evidence we can get: StoreKit only resolves it AFTER the
+      // payment sheet completed. Build 73 charged the annual plan yet the app
+      // stayed on Free because this decision depended 100% on the JS purchase
+      // event arriving (and on the Sk2 entitlement query agreeing) — neither of
+      // which is guaranteed. A returned transaction is treated as a purchase.
+      const nativePurchase = result.purchase || null;
       let verified = false;
-      try {
-        verified = await syncProEntitlement('post-purchase');
-      } catch (e) {}
+      if (nativePurchase) {
+        console.log('[ProfileScreen] Native purchase returned a transaction:',
+          nativePurchase.productId, '| txId:', nativePurchase.transactionId || '(none)');
+        // No need to re-interrogate Apple here: the shared success callback has
+        // already written 'pro', and re-running the reconcile would add up to a
+        // 30s round trip (it re-fetches the catalog when the entitlement list
+        // looks empty) — and could revoke what we just unlocked.
+        verified = true;
+      } else {
+        try {
+          verified = await syncProEntitlement('post-purchase');
+        } catch (e) {}
+      }
 
       let subState = subscriptionState;
       try {
@@ -580,7 +597,8 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
       if (typeof txAt === 'string') txAt = Date.parse(txAt);
       if (typeof txAt === 'number' && txAt > 0 && txAt < 1e12) txAt = txAt * 1000; // seconds → ms
       const isNewPurchase =
-        verified && typeof txAt === 'number' && txAt >= attemptAt - 60000;
+        !!nativePurchase ||
+        (verified && typeof txAt === 'number' && txAt >= attemptAt - 60000);
 
       if (isNewPurchase) {
         // Genuine new entitlement → greet and close the paywall. The shared

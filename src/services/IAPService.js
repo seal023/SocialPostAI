@@ -759,12 +759,20 @@ export async function purchaseSubscription(productId) {
     //    react-native-iap v12 iOS: { sku } for a single subscription.
     console.log('[IAP]   Step 4: Calling RNIap.requestSubscription({ sku })...');
     let lastError = null;
+    // react-native-iap RESOLVES this promise with the completed transaction
+    // (StoreKit 2: `buyProduct` → serialize(transaction) → Purchase). We used to
+    // throw that value away and rely solely on `purchaseUpdatedListener`, which
+    // means a dropped / never-attached JS event left a genuinely paid-for
+    // subscription locked behind the paywall — exactly what build 73 showed:
+    // Apple charged the annual plan, the app stayed on Free, and the next tap
+    // got E_ALREADY_OWNED. Keep the object and treat it as proof of purchase.
+    let nativePurchase = null;
     for (const sku of candidates) {
       try {
         if (Platform.OS === 'ios') {
-          await RNIap.requestSubscription({ sku });
+          nativePurchase = await RNIap.requestSubscription({ sku });
         } else {
-          await RNIap.requestSubscription({
+          nativePurchase = await RNIap.requestSubscription({
             sku,
             subscriptionOffers: [{ sku, offerToken: '' }],
           });
@@ -820,7 +828,26 @@ export async function purchaseSubscription(productId) {
     }
 
     console.log('[IAP]   requestSubscription Promise resolved — awaiting user action via listener...');
+
+    // ── Unlock from the RESOLVED transaction, not only from the event ────────
+    // Two independent delivery paths now cover every store implementation:
+    //   1. `purchaseUpdatedListener` (fires on StoreKit 1 and on Sk2's
+    //      Transaction.updates / buyProduct success)
+    //   2. this return value
+    // handleSuccessfulPurchase() dedupes on transactionId, so whichever arrives
+    // first unlocks Pro and the other becomes a no-op.
+    const resolvedPurchase = Array.isArray(nativePurchase)
+      ? nativePurchase.find((p) => p && p.productId) || null
+      : (nativePurchase && nativePurchase.productId ? nativePurchase : null);
+    if (resolvedPurchase) {
+      console.log('[IAP]   Native call returned a completed transaction:', resolvedPurchase.productId,
+        '| txId:', resolvedPurchase.transactionId || '(none)');
+      await handleSuccessfulPurchase(resolvedPurchase);
+    } else {
+      console.log('[IAP]   Native call resolved without a transaction object — relying on listener');
+    }
     console.log('[IAP] ============================================================');
+    return resolvedPurchase;
   } catch (error) {
     console.error('[IAP] ❌ purchaseSubscription FAILED:');
     console.error('[IAP]   code   :', error.code);
@@ -870,6 +897,46 @@ let lastEntitlementResult = null;
 
 const ENTITLEMENT_TIMEOUT_MS = 10000;
 
+// One transaction can reach us TWICE — once as the return value of
+// requestSubscription() and once through purchaseUpdatedListener (or, on Sk2,
+// through Transaction.updates after a reinstall). Unlocking is idempotent, but
+// caching the receipt and firing the success callback twice is not free, so
+// track the transaction ids we have already delivered.
+const handledTransactions = new Set();
+const HANDLED_TX_LIMIT = 50;
+
+// Timestamp of the last transaction StoreKit ITSELF handed us (either path).
+// This exists because `Transaction.currentEntitlements` can legitimately come
+// back empty for a subscription the user just paid for — on StoreKit 2 the
+// auto-renewable branch is filtered against the native productStore cache, and
+// anything that clears that cache (a re-init, a cold getItems, the library's
+// own endConnection) makes a real entitlement invisible. An empty answer inside
+// this window must therefore be treated as INCONCLUSIVE, never as "owns
+// nothing", otherwise the post-purchase reconcile downgrades a paying user.
+let lastConfirmedPurchaseAt = 0;
+const PURCHASE_GRACE_MS = 30 * 60 * 1000;
+
+// Persisted copy: the grace window must survive a relaunch. Without this, the
+// exact sequence "buy → force-quit → reopen" would still revoke Pro when the
+// native entitlement query lags, which is the bug this whole block guards.
+const KEY_LAST_PURCHASE_AT = '@SocialPostAI:lastConfirmedPurchaseAt';
+
+async function persistConfirmedPurchase(ts) {
+  try { await AsyncStorage.setItem(KEY_LAST_PURCHASE_AT, String(ts)); } catch (e) { /* best-effort */ }
+}
+
+async function loadConfirmedPurchase() {
+  if (lastConfirmedPurchaseAt) return;
+  try {
+    const n = Number(await AsyncStorage.getItem(KEY_LAST_PURCHASE_AT));
+    if (Number.isFinite(n) && n > 0) lastConfirmedPurchaseAt = n;
+  } catch (e) { /* best-effort */ }
+}
+
+export function getLastConfirmedPurchaseAt() {
+  return lastConfirmedPurchaseAt;
+}
+
 /**
  * Reconcile local Pro state with what StoreKit says the user owns.
  * @param {string} reason - label for diagnostics ('launch' | 'paywall' | 'restore' | ...)
@@ -891,7 +958,11 @@ function isActiveSubscription(p) {
     p.expirationDate ?? p.expiresDate ?? p.expiryDate ??
     p.expirationDateMs ?? p.expiresDateMs;
   if (exp == null) return true;
-  const expMs = typeof exp === 'number' ? exp : Date.parse(String(exp));
+  let expMs = typeof exp === 'number' ? exp : Date.parse(String(exp));
+  // Some store serializers report epoch SECONDS, not milliseconds. Comparing
+  // 1.79e9 against Date.now() (~1.76e12) marks a perfectly active subscription
+  // as expired, which silently filtered out a real entitlement.
+  if (Number.isFinite(expMs) && expMs > 0 && expMs < 1e12) expMs *= 1000;
   if (!Number.isFinite(expMs)) return true;
   return expMs > Date.now();
 }
@@ -918,6 +989,10 @@ export async function syncEntitlement(reason = 'manual') {
   if (!isInitialized) {
     try { await initIAP(); } catch (e) { /* recorded below */ }
   }
+
+  // Restore the persisted purchase timestamp (survives a relaunch) so the
+  // post-purchase grace window below is not defeated by restarting the app.
+  await loadConfirmedPurchase();
 
   // Warm the native product cache (see the Sk2 note above). Best-effort.
   //
@@ -950,49 +1025,76 @@ export async function syncEntitlement(reason = 'manual') {
   // right now. This IS the "Apple account verification" — a local flag, a stale
   // receipt cache, or a years-old / expired purchase must never re-grant Pro.
   // --------------------------------------------------------------------------
+  const queryActiveEntitlements = async () => {
+    const raw = await boundedNativeCall(
+      RNIap.getAvailablePurchases({ onlyIncludeActiveItems: true }),
+      ENTITLEMENT_TIMEOUT_MS,
+      'E_ENTITLEMENT_TIMEOUT',
+      'getAvailablePurchases()',
+    );
+    const list = Array.isArray(raw) ? raw : [];
+    console.log(`[IAP] getAvailablePurchases (${reason}) returned ${list.length} item(s):`,
+      list.map((p) => p && p.productId).join(', ') || '(none)');
+    // Rigorous gate: OUR product id AND still unexpired. An expired /
+    // "production sandbox"-lapsed subscription is NOT a valid entitlement.
+    return list.filter(isOurActiveSubscription);
+  };
+
   let activeError = null;
+  let subs = [];
   if (typeof RNIap.getAvailablePurchases === 'function') {
     try {
-      const raw = await boundedNativeCall(
-        RNIap.getAvailablePurchases({ onlyIncludeActiveItems: true }),
-        ENTITLEMENT_TIMEOUT_MS,
-        'E_ENTITLEMENT_TIMEOUT',
-        'getAvailablePurchases()',
-      );
-      const list = Array.isArray(raw) ? raw : [];
-      // Rigorous gate: OUR product id AND still unexpired. An expired /
-      // "production sandbox"-lapsed subscription is NOT a valid entitlement.
-      const subs = list.filter(isOurActiveSubscription);
-      if (subs.length > 0) {
-        subs.sort((a, b) => (b.transactionDate || 0) - (a.transactionDate || 0));
-        const best = subs[0];
-        console.log(`[IAP] ✅ Active entitlement verified with Apple (${reason}):`, best.productId);
+      subs = await queryActiveEntitlements();
 
-        await cacheReceipt(best);
-        if (onPurchaseSuccessCallback) {
-          await onPurchaseSuccessCallback({
-            productId: best.productId,
-            receipt: best.transactionReceipt,
-            purchaseDate: best.transactionDate || Date.now(),
-          });
-        }
-        lastEntitlementResult = {
-          at: Date.now(), reason, ok: true, stage: 'found', mode: IAP_STOREKIT_MODE,
-          via: 'currentEntitlements(active)', productId: best.productId, count: subs.length,
-          // The entitlement's OWN transaction timestamp. Callers use it to tell a
-          // genuinely NEW purchase (txDate ≈ now) apart from merely re-detecting a
-          // subscription the user already owned — e.g. tapping 订阅 on an
-          // auto-renew-cancelled sub that is still inside its paid period (Apple
-          // returns the existing transaction instead of selling a duplicate).
-          transactionDate: best.transactionDate ?? null,
-        };
-        return best;
+      // Sk2-specific blind spot: the `.autoRenewable` branch of
+      // getAvailableItems() only returns a transaction whose product is still
+      // present in the library's native `productStore`, which is filled ONLY by
+      // a successful getItems(). Anything that empties that cache makes a real
+      // subscription invisible here. When we KNOW the user just bought
+      // something — or when the user explicitly asked to RESTORE, where a false
+      // negative is the worst possible answer — an empty list is far more likely
+      // to be that cache artifact than a genuine "owns nothing", so re-warm the
+      // cache and ask once more before drawing a conclusion.
+      const deservesSecondPass =
+        lastConfirmedPurchaseAt && Date.now() - lastConfirmedPurchaseAt < PURCHASE_GRACE_MS;
+      if (subs.length === 0 && (deservesSecondPass || reason === 'restore')) {
+        console.log(`[IAP] Entitlements came back empty (${reason}) — forcing a fresh product fetch and re-querying`);
+        try { await fetchProducts({ retries: 1, timeoutMs: FETCH_RETRY_TIMEOUT_MS }); } catch (e) { /* ignore */ }
+        subs = await queryActiveEntitlements();
       }
-      console.log(`[IAP] Entitlement check (active, ${reason}): no CURRENT subscription found`);
     } catch (e) {
       activeError = e;
       console.warn(`[IAP] Entitlement check (getAvailablePurchases, ${reason}) failed:`, e?.code, e?.message);
     }
+  }
+
+  if (subs.length > 0) {
+    subs.sort((a, b) => (b.transactionDate || 0) - (a.transactionDate || 0));
+    const best = subs[0];
+    console.log(`[IAP] ✅ Active entitlement verified with Apple (${reason}):`, best.productId);
+
+    await cacheReceipt(best);
+    if (onPurchaseSuccessCallback) {
+      await onPurchaseSuccessCallback({
+        productId: best.productId,
+        receipt: best.transactionReceipt,
+        purchaseDate: best.transactionDate || Date.now(),
+      });
+    }
+    lastEntitlementResult = {
+      at: Date.now(), reason, ok: true, stage: 'found', mode: IAP_STOREKIT_MODE,
+      via: 'currentEntitlements(active)', productId: best.productId, count: subs.length,
+      // The entitlement's OWN transaction timestamp. Callers use it to tell a
+      // genuinely NEW purchase (txDate ≈ now) apart from merely re-detecting a
+      // subscription the user already owned — e.g. tapping 订阅 on an
+      // auto-renew-cancelled sub that is still inside its paid period (Apple
+      // returns the existing transaction instead of selling a duplicate).
+      transactionDate: best.transactionDate ?? null,
+    };
+    return best;
+  }
+  if (!activeError) {
+    console.log(`[IAP] Entitlement check (active, ${reason}): no CURRENT subscription found`);
   }
 
   // --------------------------------------------------------------------------
@@ -1038,15 +1140,27 @@ export async function syncEntitlement(reason = 'manual') {
   // contradict itself ("已订阅 Pro" while 语音输入 stayed locked). Classify it as
   // inconclusive instead, so reconcileWithStoreKit never downgrades on it.
   const storeReachable = !!(lastFetchResult && lastFetchResult.ok === true);
+  // A confirmed purchase inside the grace window makes an empty answer
+  // INCONCLUSIVE no matter what StoreKit claims — see lastConfirmedPurchaseAt.
+  // Reporting it as 'no-entitlement' here is what let the post-purchase
+  // reconcile revoke Pro seconds after Apple charged the card (build 73).
+  const purchasedRecently =
+    !!lastConfirmedPurchaseAt && Date.now() - lastConfirmedPurchaseAt < PURCHASE_GRACE_MS;
+  let stage;
+  if (activeError || !storeReachable) stage = 'native-error';
+  else if (purchasedRecently) stage = 'post-purchase-pending';
+  else if (historyInfo) stage = 'historical-only';
+  else stage = 'no-entitlement';
   lastEntitlementResult = {
     at: Date.now(), reason, ok: false, mode: IAP_STOREKIT_MODE,
-    stage: historyInfo
-      ? 'historical-only'
-      : (activeError || !storeReachable ? 'native-error' : 'no-entitlement'),
+    stage,
     store: lastFetchResult ? lastFetchResult.stage : 'unknown',
     history: historyInfo,
+    purchasedRecently,
     error: activeError ? { code: activeError.code, message: activeError.message } : null,
   };
+  console.warn(`[IAP] Entitlement reconcile (${reason}): none found — stage=${stage}`
+    + `${purchasedRecently ? ' (a purchase was confirmed recently → NOT downgrading)' : ''}`);
   return null;
 }
 
@@ -1064,10 +1178,38 @@ export function getLastEntitlementResult() {
 /**
  * Handle a successful purchase event.
  * Validates receipt and unlocks Pro if valid.
+ * @param {object} purchase - transaction from the listener OR the native return
+ * @param {{source?: string}} opts - diagnostics label only
  */
-async function handleSuccessfulPurchase(purchase) {
+async function handleSuccessfulPurchase(purchase, { source = 'listener' } = {}) {
   try {
-    console.log('[IAP] Processing purchase:', purchase.productId);
+    if (!purchase || !purchase.productId) {
+      console.warn('[IAP] handleSuccessfulPurchase called without a usable purchase:', purchase);
+      return;
+    }
+
+    // Dedupe (see handledTransactions above). Mark BEFORE the async work so a
+    // duplicate arriving mid-flight cannot race past the guard.
+    const txId = purchase.transactionId || purchase.id || null;
+    if (txId) {
+      const key = String(txId);
+      if (handledTransactions.has(key)) {
+        console.log(`[IAP] Transaction ${key} already handled — ignoring duplicate from ${source}`);
+        return;
+      }
+      handledTransactions.add(key);
+      if (handledTransactions.size > HANDLED_TX_LIMIT) {
+        const oldest = handledTransactions.values().next().value;
+        handledTransactions.delete(oldest);
+      }
+    }
+
+    // StoreKit only hands us a transaction it has already completed, so from
+    // this point on "the user paid" is established fact.
+    lastConfirmedPurchaseAt = Date.now();
+    persistConfirmedPurchase(lastConfirmedPurchaseAt); // fire-and-forget, survives relaunch
+    console.log(`[IAP] Processing purchase (via ${source}):`, purchase.productId,
+      '| txId:', txId || '(none)', '| date:', purchase.transactionDate || purchase.purchaseDate || '(none)');
 
     // StoreKit delivered this transaction → it completed on Apple's servers.
     // The purchase event itself is the authoritative on-device signal for a

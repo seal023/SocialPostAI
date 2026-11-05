@@ -544,7 +544,29 @@ export async function restoreProPurchase() {
     // A 'native-error' result is inconclusive, so we keep the local status untouched
     // rather than risk stripping a real subscriber on a transient glitch.
     const last = getLastEntitlementResult();
-    if (last && (last.stage === 'no-entitlement' || last.stage === 'historical-only')) {
+
+    // A restore that hit the hard deadline never got an answer from StoreKit.
+    // Treating that as "you own nothing" would be a guess — and the guess would
+    // revoke Pro from a paying subscriber. Report the stall instead and leave
+    // the local status untouched.
+    if (last && last.stage === 'timeout') {
+      return {
+        success: false,
+        titleKey: 'restore_timeout_title',
+        messageKey: 'restore_timeout_desc',
+      };
+    }
+
+    // Only downgrade when BOTH independent StoreKit answers agree: the active
+    // entitlement query found nothing AND the purchase-history query actually
+    // completed (historyChecked). A history call that timed out leaves us with
+    // a single opinion, and Sk2's `productStore` filter is known to produce
+    // false negatives — never strip Pro on one uncertain answer.
+    const decisive =
+      !!last &&
+      (last.stage === 'historical-only' ||
+        (last.stage === 'no-entitlement' && last.historyChecked));
+    if (decisive) {
       const wasPro = await isProUser();
       if (wasPro) {
         await saveSubscriptionStatus('free');

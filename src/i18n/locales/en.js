@@ -365,6 +365,8 @@ const en = {
   restore_failed_desc: 'No active subscription was found to restore. If you believe this is an error, please contact support.',
   restore_no_subscription: 'No active subscription found to restore',
   restore_failed_not_available: 'In-app purchases are not available in this environment (Expo Go).',
+  restore_timeout_title: 'Restore Timed Out',
+  restore_timeout_desc: 'Apple did not respond in time. Your Pro status was left unchanged — please check your connection and try again in a moment.',
   restore_revoked_title: 'Updated to Free',
   restore_revoked_desc: 'Your Apple account has no active subscription — Pro access has been updated to Free.',
   got_it: 'Got it',

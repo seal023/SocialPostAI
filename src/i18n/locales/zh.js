@@ -365,6 +365,8 @@ const zh = {
   restore_failed_desc: '未找到可恢复的有效订阅。如有疑问，请联系客服。',
   restore_no_subscription: '未找到可恢复的有效订阅',
   restore_failed_not_available: '当前环境不支持内购（Expo Go）。',
+  restore_timeout_title: '恢复超时',
+  restore_timeout_desc: 'Apple 未能及时响应。你的 Pro 状态保持不变，请检查网络连接后稍等片刻再试。',
   restore_revoked_title: '已更新为免费版',
   restore_revoked_desc: 'Apple 账号当前没有有效订阅，Pro 权限已更新为免费版。',
   got_it: '知道了',

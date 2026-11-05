@@ -199,6 +199,44 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
     paywallOpenRef.current = showSubscription;
   }, [showSubscription]);
 
+  // ── iOS modal/alert collision guard (build 74 regression) ──────────────────
+  // Dismissing a <Modal> and presenting a native Alert (or opening another
+  // Modal) in the SAME JS turn makes UIKit present the alert from a view
+  // controller that is still being dismissed. The transition breaks and the
+  // modal's host view is left behind on top of this screen, swallowing every
+  // touch: Settings stops scrolling and stops responding to taps while the tab
+  // bar (a sibling of the screen, not of the modal) keeps working. Reproduced
+  // on build 74 — 购买 → "已购买" → 确定 → 设置页冻结.
+  //
+  // EVERY close of the paywall must go through closePaywall() so the timestamp
+  // below is accurate — the subscription-state listener closes it too (on a
+  // successful unlock), and an Alert fired right after THAT close froze the
+  // screen just the same.
+  // 450ms: RN's fade dismissal runs ~0.35s, plus a margin so we never present
+  // into the tail of the transition.
+  const MODAL_EXIT_MS = 450;
+  const paywallClosedAtRef = useRef(0);
+
+  const closePaywall = () => {
+    paywallOpenRef.current = false;
+    paywallClosedAtRef.current = Date.now();
+    setShowSubscription(false);
+  };
+
+  // Close the paywall (if it is up) and only then run `fn` — after the
+  // dismissal animation has actually finished, so nothing is presented into a
+  // half-dismissed modal.
+  const closePaywallThen = (fn) => {
+    if (paywallOpenRef.current) closePaywall();
+    const closedAt = paywallClosedAtRef.current;
+    const elapsed = closedAt ? Date.now() - closedAt : Infinity;
+    if (elapsed >= MODAL_EXIT_MS) {
+      fn();
+      return;
+    }
+    setTimeout(fn, MODAL_EXIT_MS - elapsed);
+  };
+
   // Check Apple ID login status and permissions on mount
   useEffect(() => {
     (async () => {
@@ -237,7 +275,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
         setPermissions(perms);
       } catch (e) {}
       if (state.status === 'pro') {
-        setShowSubscription(false); // auto-close paywall on success
+        closePaywall(); // auto-close paywall on success (stamps the close time)
         // ⚠️ The "Purchase Successful" alert is deliberately NOT fired here.
         // This listener also runs for PASSIVE reconciles (app init, every paywall
         // focus), which flip an ALREADY-subscribed user's status to 'pro'. Greeting
@@ -467,8 +505,8 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
       } catch (e) {}
     }
     if (ownsPro) {
-      setShowSubscription(false);
-      Alert.alert(t('already_subscribed_title'), t('already_subscribed_desc'), okButton);
+      closePaywallThen(() =>
+        Alert.alert(t('already_subscribed_title'), t('already_subscribed_desc'), okButton));
       return;
     }
 
@@ -603,22 +641,24 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
       if (isNewPurchase) {
         // Genuine new entitlement → greet and close the paywall. The shared
         // listener has already pushed the new state to the other tabs.
-        setShowSubscription(false);
-        if (!proWelcomeShownRef.current) {
+        closePaywallThen(() => {
+          if (proWelcomeShownRef.current) return;
           proWelcomeShownRef.current = true;
           Alert.alert('✅ ' + t('purchase_success_title'), t('purchase_success_desc'), okButton);
-        }
+        });
       } else if (verified || subState.status === 'pro') {
         // The user already owns an active subscription — nothing new was bought.
         // Close the paywall and say so, instead of claiming a (non-existent)
         // purchase. Pro IS still valid until its expiry date even when auto-renew
         // was cancelled, so the Pro UI on the other tabs is correct.
-        setShowSubscription(false);
-        Alert.alert(t('already_subscribed_title'), t('already_subscribed_desc'), okButton);
+        closePaywallThen(() =>
+          Alert.alert(t('already_subscribed_title'), t('already_subscribed_desc'), okButton));
       } else {
         // The sheet flow returned but Apple confirms NOTHING was purchased — do
         // NOT claim success. Say so plainly so the user can retry / restore
         // instead of believing they are Pro while features stay locked.
+        // The paywall stays OPEN here, so there is no dismissal to collide with:
+        // alerting over a presented modal is fine.
         Alert.alert(t('purchase_incomplete_title'), t('purchase_incomplete_desc'), okButton);
       }
     } catch (error) {
@@ -675,6 +715,13 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
   const handleRestorePurchase = async () => {
     if (isRestoring) return;
 
+    // This handler runs from INSIDE the paywall Modal, so the result can only be
+    // shown on the settings screen after that modal is fully gone: the restore
+    // overlay lives in the screen tree (below any presented modal), and opening
+    // a second modal on top of the paywall is exactly what froze the screen on
+    // build 74. closePaywallThen() closes it and waits out the animation.
+    const showRestoreResult = (payload) => closePaywallThen(() => setRestoreModal(payload));
+
     console.log('[ProfileScreen] handleRestorePurchase clicked');
     setIsRestoring(true);
     try {
@@ -684,8 +731,8 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
 
       if (!result.success) {
         // No purchase to restore (or a stale Pro was just revoked) — tell the
-        // user via the custom modal (not a tiny system Alert).
-        setRestoreModal({
+        // user via the custom overlay (not a tiny system Alert).
+        showRestoreResult({
           tone: 'error',
           icon: '⚠️',
           title: t(result.titleKey || 'restore_failed_title'),
@@ -696,7 +743,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
         // longer greets, precisely so a passive reconcile can never pop a
         // "Purchase Successful" alert for an already-subscribed user).
         proWelcomeShownRef.current = true;
-        setRestoreModal({
+        showRestoreResult({
           tone: 'success',
           icon: '✅',
           title: t('purchase_success_title'),
@@ -707,7 +754,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
       // subscribeSubscription (closes the paywall + unlocks Pro live).
     } catch (error) {
       console.error('[ProfileScreen] Restore error:', error);
-      setRestoreModal({
+      showRestoreResult({
         tone: 'error',
         icon: '⚠️',
         title: t('restore_failed_title'),
@@ -1410,7 +1457,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
         visible={showSubscription}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowSubscription(false)}
+        onRequestClose={closePaywall}
       >
         <View style={[styles.modalOverlay, { backgroundColor: theme.overlay }]}>
           <View style={[styles.subModalCard, { backgroundColor: theme.card }]}>
@@ -1612,7 +1659,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
                 paddingVertical: 12,
                 alignItems: 'center',
               }}
-              onPress={() => setShowSubscription(false)}
+              onPress={closePaywall}
             >
               <Text style={{
                 color: '#999',
@@ -1636,16 +1683,24 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
         />
       )}
 
-      {/* ===== Restore Result Modal (custom, eye-catching) ===== */}
-      <Modal
-        visible={!!restoreModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setRestoreModal(null)}
-      >
-        <View style={[styles.restoreModalOverlay, { backgroundColor: theme.overlay }]}>
+      {/* ===== Restore Result Overlay (custom, eye-catching) =====
+          Deliberately an in-screen overlay and NOT a <Modal>: restore is
+          triggered from inside the paywall Modal, and stacking a second native
+          modal on top of it left a stuck modal host that froze this whole
+          screen (build 74 — Settings could not scroll or be tapped while the
+          tab bar still worked). An absolutely-positioned View has no
+          presentation lifecycle that can break. The paywall is closed first in
+          handleRestorePurchase(), otherwise this would sit underneath it. */}
+      {restoreModal ? (
+        <View
+          style={[
+            StyleSheet.absoluteFillObject,
+            styles.restoreModalOverlay,
+            { backgroundColor: theme.overlay, zIndex: 900 },
+          ]}
+        >
           <View style={[styles.restoreModalCard, { backgroundColor: theme.card }]}>
-            {restoreModal?.icon ? (
+            {restoreModal.icon ? (
               <View
                 style={[
                   styles.restoreIconCircle,
@@ -1663,10 +1718,10 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
               </View>
             ) : null}
             <Text style={[styles.restoreTitle, { color: theme.title }]}>
-              {restoreModal?.title}
+              {restoreModal.title}
             </Text>
             <Text style={[styles.restoreDesc, { color: theme.subtitle }]}>
-              {restoreModal?.desc}
+              {restoreModal.desc}
             </Text>
             <TouchableOpacity
               style={[styles.restoreButton, { backgroundColor: theme.primary }]}
@@ -1676,7 +1731,7 @@ export default function ProfileScreen({ themeName = 'pink', onThemeChange, onSig
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      ) : null}
 
       {/* ===== Theme Style Picker Modal ===== */}
       <Modal

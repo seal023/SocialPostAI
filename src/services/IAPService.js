@@ -897,6 +897,20 @@ let lastEntitlementResult = null;
 
 const ENTITLEMENT_TIMEOUT_MS = 10000;
 
+// Restore is USER-INITIATED and sits behind a spinner, so every window in that
+// path is tighter than the background ones. Build 74 stacked up to four
+// sequential 10-15s calls (warm → query → warm again with retries → query →
+// history) and the "Restoring…" state could run for well over a minute before
+// it produced ANY answer. These caps keep the whole flow near ~25s worst case
+// and ~2-5s in the normal "the entitlement is right there" case.
+const RESTORE_QUERY_TIMEOUT_MS = 9000;
+const RESTORE_WARM_TIMEOUT_MS = 9000;
+const RESTORE_HISTORY_TIMEOUT_MS = 5000;
+
+// Hard ceiling on the whole restore. Without it a native promise that never
+// settles leaves the button spinning forever with no result and no way out.
+const RESTORE_DEADLINE_MS = 26000;
+
 // One transaction can reach us TWICE — once as the return value of
 // requestSubscription() and once through purchaseUpdatedListener (or, on Sk2,
 // through Transaction.updates after a reinstall). Unlocking is idempotent, but
@@ -1011,10 +1025,22 @@ export async function syncEntitlement(reason = 'manual') {
     !!lastFetchResult && lastFetchResult.ok === true &&
     lastFetchedProductIds.length > 0 &&
     Date.now() - (lastFetchResult.at || 0) < CATALOG_WARM_MS;
+
+  // A purchase and a restore need DIFFERENT things from the store. A purchase
+  // cannot proceed until the catalog is warm (StoreKit refuses to sell an SKU
+  // it has not listed). A restore only needs the CURRENT entitlement, and
+  // Transaction.currentEntitlements normally answers that from the local
+  // receipt cache without any network round trip. Warming first therefore
+  // bought nothing and cost up to 15s of dead spinner — on build 74 the
+  // "Restoring…" state ran for over a minute before giving up. Restore now
+  // queries FIRST and pays for the warm-up only when that answer comes back
+  // empty (the genuine Sk2 productStore blind spot in the second pass below).
+  const isRestore = reason === 'restore';
+
   if (catalogFresh) {
     console.log('[IAP] Entitlement check: reusing recent successful catalog fetch '
       + `(age ${Date.now() - lastFetchResult.at}ms) — skipping cache warm-up`);
-  } else {
+  } else if (!isRestore) {
     try { await fetchProducts({ retries: 0, timeoutMs: FETCH_RETRY_TIMEOUT_MS }); } catch (e) { /* ignore */ }
   }
 
@@ -1028,7 +1054,7 @@ export async function syncEntitlement(reason = 'manual') {
   const queryActiveEntitlements = async () => {
     const raw = await boundedNativeCall(
       RNIap.getAvailablePurchases({ onlyIncludeActiveItems: true }),
-      ENTITLEMENT_TIMEOUT_MS,
+      isRestore ? RESTORE_QUERY_TIMEOUT_MS : ENTITLEMENT_TIMEOUT_MS,
       'E_ENTITLEMENT_TIMEOUT',
       'getAvailablePurchases()',
     );
@@ -1057,9 +1083,17 @@ export async function syncEntitlement(reason = 'manual') {
       // cache and ask once more before drawing a conclusion.
       const deservesSecondPass =
         lastConfirmedPurchaseAt && Date.now() - lastConfirmedPurchaseAt < PURCHASE_GRACE_MS;
-      if (subs.length === 0 && (deservesSecondPass || reason === 'restore')) {
+      if (subs.length === 0 && (deservesSecondPass || isRestore)) {
         console.log(`[IAP] Entitlements came back empty (${reason}) — forcing a fresh product fetch and re-querying`);
-        try { await fetchProducts({ retries: 1, timeoutMs: FETCH_RETRY_TIMEOUT_MS }); } catch (e) { /* ignore */ }
+        // Bounded tightly on purpose: this is the LAST resort, and another
+        // 30s of retries would only extend a spinner that has already been
+        // spinning for too long. One warm attempt, one re-query, then answer.
+        try {
+          await fetchProducts({
+            retries: 0,
+            timeoutMs: isRestore ? RESTORE_WARM_TIMEOUT_MS : FETCH_RETRY_TIMEOUT_MS,
+          });
+        } catch (e) { /* ignore */ }
         subs = await queryActiveEntitlements();
       }
     } catch (e) {
@@ -1103,15 +1137,20 @@ export async function syncEntitlement(reason = 'manual') {
   // Apple sees; it must NEVER grant Pro.
   // --------------------------------------------------------------------------
   let historyInfo = null;
+  let historyChecked = false;
   if (typeof RNIap.getPurchaseHistory === 'function') {
     try {
       const raw = await boundedNativeCall(
         RNIap.getPurchaseHistory({ onlyIncludeActiveItems: false }),
-        ENTITLEMENT_TIMEOUT_MS,
+        isRestore ? RESTORE_HISTORY_TIMEOUT_MS : ENTITLEMENT_TIMEOUT_MS,
         'E_ENTITLEMENT_TIMEOUT',
         'getPurchaseHistory()',
       );
       const list = Array.isArray(raw) ? raw : [];
+      // A resolved (even empty) answer is the SECOND independent opinion we
+      // require before anything is allowed to downgrade a paying user; see the
+      // revoke gate in restoreProPurchase().
+      historyChecked = true;
       const pastSubs = list.filter(
         (p) => p && (isMonthlyProduct(p.productId) || isAnnualProduct(p.productId))
       );
@@ -1156,6 +1195,7 @@ export async function syncEntitlement(reason = 'manual') {
     stage,
     store: lastFetchResult ? lastFetchResult.stage : 'unknown',
     history: historyInfo,
+    historyChecked,
     purchasedRecently,
     error: activeError ? { code: activeError.code, message: activeError.message } : null,
   };
@@ -1460,8 +1500,32 @@ export async function restorePurchases() {
     //
     //  2. On StoreKit 2 the products must be warm in the NATIVE cache before
     //     currentEntitlements reports auto-renewable entitlements —
-    //     syncEntitlement() handles that ordering.
-    const found = await syncEntitlement('restore');
+    //     syncEntitlement() handles that ordering (and, for restore, does it
+    //     only when the first, cache-free query comes back empty).
+    //
+    // The whole reconcile is raced against a hard deadline so the caller can
+    // ALWAYS finish: a native promise that neither resolves nor rejects used to
+    // leave "Restoring…" spinning indefinitely (build 74).
+    let restoreDeadlineTimer = null;
+    const found = await Promise.race([
+      syncEntitlement('restore'),
+      new Promise((resolve) => {
+        restoreDeadlineTimer = setTimeout(() => {
+          console.warn(`[IAP] Restore exceeded ${RESTORE_DEADLINE_MS}ms — giving up on this attempt`);
+          // Deliberately NOT 'no-entitlement': we do not know the answer, and
+          // reporting a decisive negative here would let the caller downgrade a
+          // paying subscriber whose StoreKit call merely stalled.
+          lastEntitlementResult = {
+            at: Date.now(), reason: 'restore', ok: false, mode: IAP_STOREKIT_MODE,
+            stage: 'timeout', purchasedRecently: false,
+          };
+          resolve(null);
+        }, RESTORE_DEADLINE_MS);
+      }),
+    ]);
+    // Never let the losing side of the race fire later and overwrite a real
+    // result with a bogus 'timeout'.
+    if (restoreDeadlineTimer) clearTimeout(restoreDeadlineTimer);
     if (found) {
       await acknowledgePurchase(found);
       console.log('[IAP] Purchase restored successfully:', found.productId);

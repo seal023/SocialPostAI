@@ -5,8 +5,8 @@ No build step. Deploys to Vercel as static files. No API key lives in the fronte
 generation is proxied through the Cloudflare Worker (`api.socialpostai.app`).
 
 ## Files
-- `index.html` — generator (card UI)
-- `styles.css` — pink/gradient theme, responsive (max 520px)
+- `index.html` — generator (dark two-column hero: left copy, right glass tool window)
+- `styles.css` — dark geek theme (near-monochrome + restrained indigo accent), responsive
 - `app.js` — platform select, generate (→ Worker `/api/generate`), daily-1 limit, waitlist modal
 - `privacy.html` / `terms.html` / `refund.html` / `contact.html` — compliance (footer-linked)
 - `favicon.svg`, `vercel.json`

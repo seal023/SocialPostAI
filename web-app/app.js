@@ -174,7 +174,7 @@ generateBtn.onclick = async () => {
   } catch (err) {
     result.hidden = false;
     resultBody.innerHTML =
-      '<p style="color:#E63A78;font-weight:700;">Generation service is warming up.</p>' +
+      '<p style="color:#f87171;font-weight:700;">Generation service is warming up.</p>' +
       '<p style="color:#6B6B78;font-size:14px;">The AI backend is being connected. Please try again in a moment, or join the waitlist to be notified when everything is live.</p>';
   } finally {
     if (!limitReached()) {

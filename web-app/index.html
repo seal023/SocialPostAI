@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#FF4D8D" />
+  <title>SocialPostAI Pro — AI Social Media Copy Generator</title>
+  <meta name="description" content="Generate platform-perfect social media copy for Instagram, TikTok, X, LinkedIn and Facebook with AI. Free daily credits." />
+  <meta property="og:title" content="SocialPostAI Pro" />
+  <meta property="og:description" content="AI copywriter tuned for each platform. Instagram, TikTok, X, LinkedIn, Facebook." />
+  <meta property="og:type" content="website" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="brand">✨ SocialPostAI <span>Pro</span></div>
+      <div class="plan-tag" id="planTag">Free · 1 credit/day</div>
+    </header>
+
+    <!-- Generator card -->
+    <main class="card">
+      <h1 class="hero-title">Write once. Win every platform.</h1>
+      <p class="hero-sub">Pick your platforms, drop a topic, and get copy tuned to each network's style — in seconds.</p>
+
+      <!-- Platform selector -->
+      <section class="block">
+        <label class="block-title">Target platforms</label>
+        <div class="chips" id="platformChips"></div>
+        <p class="hint" id="platformHint">Select one or more platforms.</p>
+      </section>
+
+      <!-- Topic -->
+      <section class="block">
+        <label class="block-title" for="topic">Your topic</label>
+        <textarea id="topic" class="topic" rows="3" maxlength="300"
+          placeholder="e.g. Launch of our new cold-brew coffee can"></textarea>
+        <div class="topic-foot">
+          <span class="char-count"><span id="topicCount">0</span>/300</span>
+        </div>
+      </section>
+
+      <!-- Output language -->
+      <section class="block">
+        <label class="block-title">Output language</label>
+        <div class="seg" id="langSeg">
+          <button class="seg-btn active" data-lang="en">English</button>
+          <button class="seg-btn" data-lang="zh">中文</button>
+        </div>
+      </section>
+
+      <!-- Style -->
+      <section class="block">
+        <label class="block-title">Writing style</label>
+        <div class="chips" id="styleChips"></div>
+      </section>
+
+      <!-- Tone -->
+      <section class="block">
+        <label class="block-title">Tone <span class="muted" id="toneLabel">Balanced</span></label>
+        <input type="range" id="tone" class="slider" min="0" max="10" value="5" />
+      </section>
+
+      <!-- Word count -->
+      <section class="block">
+        <label class="block-title">Length <span class="muted" id="wcLabel">180 chars</span></label>
+        <input type="range" id="wordCount" class="slider" min="50" max="500" step="10" value="180" />
+      </section>
+
+      <!-- Generate -->
+      <button class="generate" id="generateBtn">Generate copy</button>
+      <p class="disclaimer">AI-generated content is for reference only. Please review manually before publishing.</p>
+
+      <!-- Result -->
+      <div class="result" id="result" hidden>
+        <div class="result-head">
+          <span>Your copy</span>
+          <button class="copy-btn" id="copyBtn">Copy</button>
+        </div>
+        <div class="result-body" id="resultBody"></div>
+      </div>
+
+      <!-- Limit reached -->
+      <div class="limit-note" id="limitNote" hidden>
+        <p>You've used today's free credit. Join the waitlist to unlock unlimited generations and Pro features.</p>
+        <button class="waitlist-cta" id="waitlistFromLimit">Join the waitlist</button>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <nav class="footer-links">
+        <a href="/privacy.html">Privacy Policy</a>
+        <a href="/terms.html">Terms of Service</a>
+        <a href="/refund.html">Refund Policy</a>
+        <a href="/contact.html">Contact</a>
+      </nav>
+      <p class="footer-email">Support: <a href="mailto:support@socialpostai.app">support@socialpostai.app</a></p>
+      <p class="footer-fine">© <span id="year"></span> SocialPostAI Pro. AI-generated content is for reference only. Please review manually.</p>
+    </footer>
+  </div>
+
+  <!-- Waitlist modal -->
+  <div class="modal" id="waitlistModal" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-card">
+      <button class="modal-x" data-close aria-label="Close">✕</button>
+      <h2>Join the waitlist</h2>
+      <p class="modal-sub">Creem payments are finishing approval. Leave your email and we'll unlock unlimited generations + Pro the moment we go live.</p>
+      <input type="email" id="waitlistEmail" class="email-input" placeholder="you@example.com" />
+      <button class="waitlist-submit" id="waitlistSubmit">Notify me</button>
+      <p class="waitlist-status" id="waitlistStatus"></p>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

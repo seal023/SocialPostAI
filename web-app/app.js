@@ -1,0 +1,263 @@
+// ============================================================
+// SocialPostAI Pro — Web front-end logic
+// Talks to the Cloudflare Worker proxy (key stays server-side).
+// Worker URL is configurable via window.WORKER_URL or this constant.
+// ============================================================
+
+// Set this to your Worker's production URL (api.socialpostai.app once bound).
+const WORKER_URL = (window.WORKER_URL || 'https://api.socialpostai.app').replace(/\/+$/, '');
+
+const PLATFORMS = [
+  { id: 'instagram', name: 'Instagram', emoji: '📸', hint: 'Visual hooks, 15–30 hashtags' },
+  { id: 'tiktok', name: 'TikTok', emoji: '🎵', hint: '[Hook] + [Script] video plan' },
+  { id: 'x', name: 'X', emoji: '𝕏', hint: 'Punchy, ≤280 chars' },
+  { id: 'linkedin', name: 'LinkedIn', emoji: '💼', hint: 'Professional, structured' },
+  { id: 'facebook', name: 'Facebook', emoji: '👍', hint: 'Conversational, CTA' },
+];
+
+const STYLES = [
+  { id: 'lively', name: 'Lively' },
+  { id: 'formal', name: 'Formal' },
+  { id: 'elegant', name: 'Elegant' },
+  { id: 'casual', name: 'Casual' },
+];
+
+const TONE_WORDS = ['Very formal','Formal','Professional','Formal-warm','Polite','Balanced','Trendy','Casual','Very casual','Slangy','Spoken'];
+
+const selectedPlatforms = new Set(['tiktok', 'instagram']);
+let outputLang = 'en';
+let selectedStyle = 'lively';
+let tone = 5;
+let wordCount = 180;
+
+// ---------- Daily free limit (client-side gate; Worker enforces too) ----------
+function todayKey() {
+  const d = new Date();
+  return `spai_used_${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`;
+}
+function usedToday() {
+  return parseInt(localStorage.getItem(todayKey()) || '0', 10);
+}
+function markUsed() {
+  localStorage.setItem(todayKey(), String(usedToday() + 1));
+}
+function limitReached() {
+  return usedToday() >= 1; // Free tier = 1 credit/day
+}
+
+// ---------- Render: platform chips ----------
+const platformChips = document.getElementById('platformChips');
+PLATFORMS.forEach((p) => {
+  const b = document.createElement('button');
+  b.className = 'chip' + (selectedPlatforms.has(p.id) ? ' active' : '');
+  b.textContent = `${p.emoji} ${p.name}`;
+  b.onclick = () => {
+    if (selectedPlatforms.has(p.id)) selectedPlatforms.delete(p.id);
+    else selectedPlatforms.add(p.id);
+    b.classList.toggle('active');
+    updatePlatformHint();
+  };
+  platformChips.appendChild(b);
+});
+function updatePlatformHint() {
+  const hint = document.getElementById('platformHint');
+  if (selectedPlatforms.size === 0) {
+    hint.textContent = 'Select one or more platforms.';
+  } else {
+    const names = PLATFORMS.filter((p) => selectedPlatforms.has(p.id)).map((p) => p.name).join(', ');
+    const hints = PLATFORMS.filter((p) => selectedPlatforms.has(p.id)).map((p) => `${p.emoji} ${p.name}: ${p.hint}`).join('  ·  ');
+    hint.textContent = hints;
+  }
+}
+updatePlatformHint();
+
+// ---------- Render: style chips ----------
+const styleChips = document.getElementById('styleChips');
+STYLES.forEach((s) => {
+  const b = document.createElement('button');
+  b.className = 'chip' + (s.id === selectedStyle ? ' active' : '');
+  b.textContent = s.name;
+  b.onclick = () => {
+    selectedStyle = s.id;
+    [...styleChips.children].forEach((c) => c.classList.remove('active'));
+    b.classList.add('active');
+  };
+  styleChips.appendChild(b);
+});
+
+// ---------- Language segmented ----------
+document.getElementById('langSeg').addEventListener('click', (e) => {
+  const btn = e.target.closest('.seg-btn');
+  if (!btn) return;
+  outputLang = btn.dataset.lang;
+  [...document.getElementById('langSeg').children].forEach((c) => c.classList.remove('active'));
+  btn.classList.add('active');
+});
+
+// ---------- Sliders ----------
+const toneEl = document.getElementById('tone');
+const toneLabel = document.getElementById('toneLabel');
+toneEl.oninput = () => { tone = +toneEl.value; toneLabel.textContent = TONE_WORDS[tone]; };
+toneLabel.textContent = TONE_WORDS[tone];
+
+const wcEl = document.getElementById('wordCount');
+const wcLabel = document.getElementById('wcLabel');
+wcEl.oninput = () => { wordCount = +wcEl.value; wcLabel.textContent = `${wordCount} chars`; };
+wcLabel.textContent = `${wordCount} chars`;
+
+// ---------- Topic ----------
+const topic = document.getElementById('topic');
+const topicCount = document.getElementById('topicCount');
+topic.oninput = () => { topicCount.textContent = topic.value.length; };
+
+// ---------- Plan tag / limit UI ----------
+function refreshLimitUI() {
+  const planTag = document.getElementById('planTag');
+  const limitNote = document.getElementById('limitNote');
+  const genBtn = document.getElementById('generateBtn');
+  if (limitReached()) {
+    planTag.textContent = 'Free · used today';
+    limitNote.hidden = false;
+    genBtn.disabled = true;
+    genBtn.textContent = 'Daily limit reached';
+  } else {
+    planTag.textContent = 'Free · 1 credit/day';
+    limitNote.hidden = true;
+    genBtn.disabled = false;
+    genBtn.textContent = 'Generate copy';
+  }
+}
+refreshLimitUI();
+
+// ---------- Generate ----------
+const result = document.getElementById('result');
+const resultBody = document.getElementById('resultBody');
+const generateBtn = document.getElementById('generateBtn');
+
+generateBtn.onclick = async () => {
+  if (limitReached()) { openWaitlist(); return; }
+  if (!topic.value.trim()) { alert('Please enter a topic first.'); return; }
+  if (selectedPlatforms.size === 0) { alert('Please select at least one platform.'); return; }
+
+  generateBtn.disabled = true;
+  generateBtn.textContent = 'Generating…';
+  result.hidden = true;
+
+  try {
+    const res = await fetch(`${WORKER_URL}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        platforms: [...selectedPlatforms],
+        style: selectedStyle,
+        tone,
+        wordCount,
+        topic: topic.value.trim(),
+        outputLanguage: outputLang,
+      }),
+    });
+
+    if (res.status === 429) {
+      markUsed();
+      refreshLimitUI();
+      result.hidden = false;
+      resultBody.innerHTML = '<p class="pl-name">Daily limit reached</p>You have used your free credit for today. Join the waitlist to unlock unlimited generations.</p>';
+      return;
+    }
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const text = data.text || data.data || '';
+    renderResult(text);
+    markUsed();
+    refreshLimitUI();
+  } catch (err) {
+    result.hidden = false;
+    resultBody.innerHTML =
+      '<p style="color:#E63A78;font-weight:700;">Generation service is warming up.</p>' +
+      '<p style="color:#6B6B78;font-size:14px;">The AI backend is being connected. Please try again in a moment, or join the waitlist to be notified when everything is live.</p>';
+  } finally {
+    if (!limitReached()) {
+      generateBtn.disabled = false;
+      generateBtn.textContent = 'Generate copy';
+    }
+  }
+};
+
+function renderResult(text) {
+  result.hidden = false;
+  // Split multi-platform output on "---" separators
+  const parts = text.split(/\s*(?:---+|——+)\s*/).map((s) => s.trim()).filter(Boolean);
+  let html = '';
+  if (parts.length > 1) {
+    const ids = [...selectedPlatforms];
+    parts.forEach((part, i) => {
+      const id = ids[i];
+      const name = id ? (PLATFORMS.find((p) => p.id === id)?.name || '') : '';
+      html += `<p class="pl-name">${name ? name + ' — ' : ''}Copy ${i + 1}</p>${escapeHtml(part)}`;
+    });
+  } else {
+    html = escapeHtml(text);
+  }
+  resultBody.innerHTML = html;
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+}
+
+// ---------- Copy ----------
+document.getElementById('copyBtn').onclick = () => {
+  const text = resultBody.innerText;
+  navigator.clipboard?.writeText(text).then(() => {
+    const b = document.getElementById('copyBtn');
+    b.textContent = 'Copied!';
+    setTimeout(() => (b.textContent = 'Copy'), 1500);
+  });
+};
+
+// ---------- Waitlist modal ----------
+const modal = document.getElementById('waitlistModal');
+function openWaitlist() { modal.hidden = false; document.getElementById('waitlistEmail').focus(); }
+function closeWaitlist() { modal.hidden = true; }
+modal.querySelectorAll('[data-close]').forEach((el) => (el.onclick = closeWaitlist));
+document.getElementById('waitlistFromLimit').onclick = openWaitlist;
+
+document.getElementById('waitlistSubmit').onclick = async () => {
+  const email = document.getElementById('waitlistEmail').value.trim();
+  const status = document.getElementById('waitlistStatus');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    status.className = 'waitlist-status err';
+    status.textContent = 'Please enter a valid email.';
+    return;
+  }
+  status.className = 'waitlist-status';
+  status.textContent = 'Submitting…';
+  try {
+    const res = await fetch(`${WORKER_URL}/api/waitlist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    if (res.ok || res.status === 404 || res.status === 502) {
+      // Worker may not be deployed yet — still acknowledge locally.
+      status.className = 'waitlist-status ok';
+      status.textContent = "You're on the list! We'll email you at launch. 🎉";
+      document.getElementById('waitlistEmail').value = '';
+      setTimeout(closeWaitlist, 1800);
+    } else {
+      throw new Error('submit failed');
+    }
+  } catch (e) {
+    // Offline / Worker not ready: keep email locally so we don't lose the lead.
+    const saved = JSON.parse(localStorage.getItem('spai_waitlist') || '[]');
+    saved.push({ email, ts: Date.now() });
+    localStorage.setItem('spai_waitlist', JSON.stringify(saved));
+    status.className = 'waitlist-status ok';
+    status.textContent = "Saved! We'll be in touch at launch. 🎉";
+    document.getElementById('waitlistEmail').value = '';
+    setTimeout(closeWaitlist, 1800);
+  }
+};
+
+// Year in footer
+document.getElementById('year').textContent = new Date().getFullYear();

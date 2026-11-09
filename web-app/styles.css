@@ -10,6 +10,7 @@
   --primary-light: #FFE6F1;
   --radius: 18px;
   --shadow: 0 10px 30px rgba(255, 77, 141, 0.12);
+  --nav-h: 64px;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -23,31 +24,80 @@ html, body {
   min-height: 100vh;
 }
 
-.app {
-  max-width: 520px;
-  margin: 0 auto;
-  padding: 16px 16px 40px;
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
+/* ===== Top navigation bar ===== */
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--border);
 }
-
-/* Top bar */
-.topbar {
+.nav-inner {
+  max-width: 1140px;
+  margin: 0 auto;
+  height: var(--nav-h);
+  padding: 0 22px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 4px 16px;
 }
-.brand { font-size: 22px; font-weight: 800; color: var(--primary); letter-spacing: -0.3px; }
-.brand span { color: var(--accent); }
-.plan-tag {
-  font-size: 12px; font-weight: 700; color: var(--primary);
-  background: var(--primary-light); padding: 6px 10px; border-radius: 999px;
-  white-space: nowrap;
+.nav-brand { font-size: 20px; font-weight: 800; color: var(--primary); text-decoration: none; letter-spacing: -0.3px; }
+.nav-brand span { color: var(--accent); }
+.nav-links { display: flex; align-items: center; gap: 8px; }
+.nav-link {
+  font-size: 14px; font-weight: 700; color: var(--sub);
+  text-decoration: none; padding: 8px 12px; border-radius: 10px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.nav-link:hover { color: var(--primary-d); }
+.nav-login {
+  color: #fff; background: linear-gradient(135deg, var(--primary), var(--accent));
+  box-shadow: 0 6px 16px rgba(255, 77, 141, 0.3);
+}
+.nav-login:hover { color: #fff; filter: brightness(1.05); }
+
+/* ===== Hero layout (mobile-first: single centered column) ===== */
+.hero { padding: 30px 16px 10px; }
+.hero-inner {
+  max-width: 520px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
 }
 
-/* Card */
+/* Left marketing column */
+.hero-left { text-align: center; }
+.badge {
+  display: none;
+  align-self: flex-start;
+  font-size: 12px; font-weight: 700; color: var(--primary-d);
+  background: var(--primary-light); border: 1px solid var(--border);
+  padding: 6px 12px; border-radius: 999px; margin-bottom: 14px;
+}
+.hero-title {
+  font-size: 28px; font-weight: 800; margin: 0 0 10px; letter-spacing: -0.6px;
+  line-height: 1.15;
+  background: linear-gradient(120deg, var(--primary), var(--accent));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.hero-sub { color: var(--sub); font-size: 15px; line-height: 1.55; margin: 0; }
+.hero-features { display: none; list-style: none; padding: 0; margin: 22px 0 0; text-align: left; }
+.hero-features li { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--ink); margin-bottom: 12px; font-weight: 500; }
+.tick {
+  flex: none; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--primary-light); color: var(--primary-d);
+  display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800;
+}
+.hero-stats { display: none; gap: 28px; margin-top: 26px; }
+.stat { display: flex; flex-direction: column; }
+.stat strong { font-size: 26px; font-weight: 800; color: var(--primary-d); line-height: 1; }
+.stat span { font-size: 12px; color: var(--sub); margin-top: 4px; }
+
+/* ===== Card (generator) ===== */
+.hero-right { width: 100%; }
 .card {
   background: var(--card);
   border-radius: 24px;
@@ -55,14 +105,19 @@ html, body {
   box-shadow: var(--shadow);
   border: 1px solid rgba(255,255,255,0.6);
 }
-.hero-title { font-size: 26px; font-weight: 800; margin: 4px 0 6px; letter-spacing: -0.5px; }
-.hero-sub { color: var(--sub); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
+.plan-tag {
+  display: inline-block;
+  font-size: 12px; font-weight: 700; color: var(--primary);
+  background: var(--primary-light); padding: 6px 10px; border-radius: 999px;
+  white-space: nowrap; margin-bottom: 16px;
+}
+.hero-title.inside { font-size: 26px; font-weight: 800; margin: 4px 0 6px; letter-spacing: -0.5px; }
+.hero-sub.inside { color: var(--sub); font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
 
 .block { margin-bottom: 18px; }
 .block-title { display: block; font-size: 14px; font-weight: 700; margin-bottom: 10px; }
 .muted { color: var(--sub); font-weight: 600; }
 .hint { font-size: 12px; color: var(--sub); margin: 8px 0 0; }
-.footer-fine .muted {}
 
 /* Chips */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -144,8 +199,8 @@ html, body {
   padding: 12px 20px; border-radius: 12px; cursor: pointer; font-size: 14px;
 }
 
-/* Footer */
-.footer { margin-top: auto; padding: 26px 8px 0; text-align: center; }
+/* ===== Footer ===== */
+.footer { margin-top: 40px; padding: 26px 8px 0; text-align: center; }
 .footer-links { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-bottom: 10px; }
 .footer-links a { color: var(--primary-d); font-size: 13px; font-weight: 600; text-decoration: none; }
 .footer-links a:hover { text-decoration: underline; }
@@ -153,7 +208,7 @@ html, body {
 .footer-email a { color: var(--primary-d); }
 .footer-fine { font-size: 11px; color: var(--sub); margin: 0; line-height: 1.5; }
 
-/* Modal */
+/* ===== Modal ===== */
 .modal { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
 .modal[hidden] { display: none; }
 .modal-backdrop { position: absolute; inset: 0; background: rgba(20,10,20,0.45); }
@@ -178,7 +233,7 @@ html, body {
 .waitlist-status.ok { color: #1a9d54; font-weight: 700; }
 .waitlist-status.err { color: var(--primary-d); font-weight: 600; }
 
-/* Legal pages */
+/* ===== Legal pages ===== */
 .legal { max-width: 720px; margin: 0 auto; padding: 28px 20px 60px; }
 .legal h1 { font-size: 26px; margin: 8px 0 4px; }
 .legal .updated { color: var(--sub); font-size: 13px; margin-bottom: 20px; }
@@ -188,7 +243,33 @@ html, body {
 .legal .back { display: inline-block; margin-top: 28px; color: var(--primary-d); font-weight: 700; text-decoration: none; }
 .legal .email-line { background: var(--primary-light); border-radius: 12px; padding: 14px 16px; margin: 12px 0; font-weight: 600; }
 
+/* ===== Desktop: two-column hero ===== */
+@media (min-width: 920px) {
+  .hero {
+    min-height: calc(100vh - var(--nav-h));
+    display: flex;
+    align-items: center;
+    padding: 40px 24px;
+  }
+  .hero-inner {
+    max-width: 1140px;
+    width: 100%;
+    margin: 0 auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 64px;
+  }
+  .hero-left { text-align: left; flex: 1 1 0; }
+  .badge { display: inline-block; }
+  .hero-title { font-size: clamp(40px, 5vw, 60px); margin-bottom: 18px; }
+  .hero-sub { font-size: 18px; max-width: 480px; }
+  .hero-features { display: block; }
+  .hero-stats { display: flex; }
+  .hero-right { flex: 0 0 460px; width: 460px; }
+  .card { padding: 26px 24px 30px; }
+}
+
 @media (max-width: 380px) {
-  .hero-title { font-size: 22px; }
-  .brand { font-size: 19px; }
+  .hero-title { font-size: 24px; }
+  .nav-brand { font-size: 18px; }
 }

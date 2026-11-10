@@ -28,9 +28,10 @@ function getTurnstileToken() {
 function initTurnstile() {
   if (!TURNSTILE_SITE_KEY || !window.turnstile) return;
   const wrap = document.getElementById('turnstileWrap');
-  if (!wrap) return;
+  const mount = document.getElementById('cfTurnstileMount');
+  if (!wrap || !mount) return;
   wrap.hidden = false;
-  window.turnstile.render(wrap.querySelector('.cf-turnstile'), {
+  window.turnstile.render(mount, {
     sitekey: TURNSTILE_SITE_KEY,
     theme: 'dark',
   });

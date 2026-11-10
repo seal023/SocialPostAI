@@ -189,7 +189,7 @@
 
             <!-- Turnstile (human verification) — rendered only when a site key is set -->
             <div class="turnstile-wrap" id="turnstileWrap" hidden>
-              <div class="cf-turnstile" data-sitekey=""></div>
+              <div id="cfTurnstileMount"></div>
             </div>
 
             <!-- Result -->
@@ -282,6 +282,8 @@
   </div>
 
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  <!-- Paste your Cloudflare Turnstile SITE key here (public, safe to commit). Empty = dev mode (no challenge). -->
+  <script>window.TURNSTILE_SITE_KEY = '';</script>
   <script src="/app.js"></script>
 </body>
 </html>

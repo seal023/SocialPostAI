@@ -180,7 +180,11 @@ generateBtn.onclick = async () => {
       return;
     }
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      let detail = '';
+      try { const e = await res.json(); detail = e.detail || e.error || ''; } catch {}
+      throw new Error(`HTTP ${res.status}${detail ? ' — ' + detail : ''}`);
+    }
     const data = await res.json();
     const text = data.text || data.data || '';
     renderResult(text);
@@ -189,8 +193,8 @@ generateBtn.onclick = async () => {
   } catch (err) {
     result.hidden = false;
     resultBody.innerHTML =
-      '<p style="color:#f87171;font-weight:700;">Generation service is warming up.</p>' +
-      '<p style="color:#a1a1aa;font-size:14px;">The AI backend is being connected. Please try again in a moment, or join the waitlist to be notified when everything is live.</p>';
+      '<p style="color:#f87171;font-weight:700;margin:0 0 8px;">Generation failed.</p>' +
+      `<p style="color:#a1a1aa;font-size:13px;white-space:pre-wrap;word-break:break-word;line-height:1.5;margin:0;">${escapeHtml(String((err && err.message) || err))}</p>`;
   } finally {
     if (!limitReached()) {
       generateBtn.disabled = false;

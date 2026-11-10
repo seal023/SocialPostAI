@@ -385,6 +385,37 @@ html, body {
 }
 .waitlist-cta:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px var(--accent), 0 12px 30px var(--accent-glow); }
 
+/* ===== Section eyebrow (H2 used to separate function blocks) ===== */
+.section-h2 {
+  font-size: 13px; font-weight: 700; color: var(--primary-d);
+  letter-spacing: 0.6px; text-transform: uppercase;
+  margin: 30px 0 14px;
+}
+
+/* ===== FAQ (GEO long-tail capture) ===== */
+.faq { position: relative; z-index: 1; padding: 44px 24px 8px; }
+.faq > h2 {
+  font-size: clamp(26px, 3vw, 34px); font-weight: 800; letter-spacing: -1px;
+  color: #fff; text-align: center; margin: 0 0 28px;
+}
+.faq-list {
+  display: flex; flex-direction: column; gap: 14px;
+  max-width: 760px; margin: 0 auto;
+}
+.faq-item {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 18px 20px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.faq-item:hover {
+  border-color: rgba(129,140,248,0.4);
+  box-shadow: 0 0 0 1px rgba(129,140,248,0.2);
+}
+.faq-item h3 { margin: 0 0 8px; font-size: 16px; font-weight: 700; color: #fafafa; }
+.faq-item p { margin: 0; font-size: 14.5px; color: var(--sub); line-height: 1.65; }
+
 /* ===== Footer ===== */
 .footer {
   position: relative; z-index: 1;

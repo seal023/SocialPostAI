@@ -4,11 +4,8 @@
 // Worker URL is configurable via window.WORKER_URL or this constant.
 // ============================================================
 
-// Set this to your Worker's production URL (api.socialpostai.app once bound).
-const WORKER_URL = (window.WORKER_URL || 'https://api.socialpostai.app').replace(/\/+$/, '');
-// Turnstile site key. Set window.TURNSTILE_SITE_KEY (before app.js loads) or in Cloudflare.
-// Leave empty to run in dev mode (no challenge widget; worker must run with TURNSTILE_SECRET="test").
-const TURNSTILE_SITE_KEY = window.TURNSTILE_SITE_KEY || '';
+// Set this to your Worker's production URL.
+const WORKER_URL = 'https://api.socialpostai.app';
 
 // ---------- Device fingerprint (for rate limiting) ----------
 function getDeviceId() {
@@ -21,27 +18,7 @@ function getDeviceId() {
   return id;
 }
 
-// ---------- Turnstile (human verification) ----------
-function getTurnstileToken() {
-  try { return (window.turnstile && window.turnstile.getResponse()) || ''; } catch { return ''; }
-}
-function initTurnstile() {
-  if (!TURNSTILE_SITE_KEY || !window.turnstile) return;
-  const wrap = document.getElementById('turnstileWrap');
-  const mount = document.getElementById('cfTurnstileMount');
-  if (!wrap || !mount) return;
-  wrap.hidden = false;
-  window.turnstile.render(mount, {
-    sitekey: TURNSTILE_SITE_KEY,
-    theme: 'dark',
-  });
-}
-function whenTurnstileReady(cb) {
-  if (window.turnstile) return cb();
-  const t = setInterval(() => { if (window.turnstile) { clearInterval(t); cb(); } }, 200);
-  setTimeout(() => clearInterval(t), 8000);
-}
-
+// ---------- Platform list ----------
 const PLATFORMS = [
   { id: 'instagram', name: 'Instagram', emoji: '📸', hint: 'Visual hooks, 15–30 hashtags' },
   { id: 'tiktok', name: 'TikTok', emoji: '🎵', hint: '[Hook] + [Script] video plan' },
@@ -174,13 +151,6 @@ generateBtn.onclick = async () => {
   if (!topic.value.trim()) { alert('Please enter a topic first.'); return; }
   if (selectedPlatforms.size === 0) { alert('Please select at least one platform.'); return; }
 
-  // Turnstile: if a real site key is configured, the challenge must be solved first.
-  let tsToken = '';
-  if (TURNSTILE_SITE_KEY) {
-    tsToken = getTurnstileToken();
-    if (!tsToken) { alert('Please complete the human verification first.'); return; }
-  }
-
   generateBtn.disabled = true;
   generateBtn.textContent = 'Generating…';
   result.hidden = true;
@@ -190,7 +160,6 @@ generateBtn.onclick = async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        token: tsToken,
         uuid: getDeviceId(),
         platforms: [...selectedPlatforms],
         style: selectedStyle,
@@ -217,8 +186,6 @@ generateBtn.onclick = async () => {
     renderResult(text);
     markUsed();
     refreshLimitUI();
-    // Require a fresh Turnstile token for the next generation.
-    if (TURNSTILE_SITE_KEY && window.turnstile) { try { window.turnstile.reset(); } catch {} }
   } catch (err) {
     result.hidden = false;
     resultBody.innerHTML =
@@ -326,6 +293,3 @@ document.getElementById('getProBtn').onclick = () => {
 
 // Year in footer
 document.getElementById('year').textContent = new Date().getFullYear();
-
-// Render the Turnstile widget once the script is ready (no-op in dev mode)
-whenTurnstileReady(initTurnstile);

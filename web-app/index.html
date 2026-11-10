@@ -187,10 +187,7 @@
             <button class="generate" id="generateBtn">Generate copy</button>
             <p class="disclaimer">AI-generated content is for reference only. Please review manually before publishing.</p>
 
-            <!-- Turnstile (human verification) — rendered only when a site key is set -->
-            <div class="turnstile-wrap" id="turnstileWrap" hidden>
-              <div id="cfTurnstileMount"></div>
-            </div>
+            <!-- Turnstile disabled -->
 
             <!-- Result -->
             <div class="result" id="result" hidden>
@@ -282,9 +279,7 @@
     </div>
   </div>
 
-  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-  <!-- Paste your Cloudflare Turnstile SITE key here (public, safe to commit). Empty = dev mode (no challenge). -->
-  <script>window.TURNSTILE_SITE_KEY = '';</script>
+  <!-- Turnstile disabled: human verification skipped. -->
   <script src="/cookie.js"></script>
   <script src="/app.js"></script>
 </body>

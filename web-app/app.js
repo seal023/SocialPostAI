@@ -6,6 +6,40 @@
 
 // Set this to your Worker's production URL (api.socialpostai.app once bound).
 const WORKER_URL = (window.WORKER_URL || 'https://api.socialpostai.app').replace(/\/+$/, '');
+// Turnstile site key. Set window.TURNSTILE_SITE_KEY (before app.js loads) or in Cloudflare.
+// Leave empty to run in dev mode (no challenge widget; worker must run with TURNSTILE_SECRET="test").
+const TURNSTILE_SITE_KEY = window.TURNSTILE_SITE_KEY || '';
+
+// ---------- Device fingerprint (for rate limiting) ----------
+function getDeviceId() {
+  let id = localStorage.getItem('spai_uuid');
+  if (!id) {
+    id = (crypto.randomUUID && crypto.randomUUID()) ||
+      'd' + Date.now().toString(16) + Math.random().toString(16).slice(2);
+    localStorage.setItem('spai_uuid', id);
+  }
+  return id;
+}
+
+// ---------- Turnstile (human verification) ----------
+function getTurnstileToken() {
+  try { return (window.turnstile && window.turnstile.getResponse()) || ''; } catch { return ''; }
+}
+function initTurnstile() {
+  if (!TURNSTILE_SITE_KEY || !window.turnstile) return;
+  const wrap = document.getElementById('turnstileWrap');
+  if (!wrap) return;
+  wrap.hidden = false;
+  window.turnstile.render(wrap.querySelector('.cf-turnstile'), {
+    sitekey: TURNSTILE_SITE_KEY,
+    theme: 'dark',
+  });
+}
+function whenTurnstileReady(cb) {
+  if (window.turnstile) return cb();
+  const t = setInterval(() => { if (window.turnstile) { clearInterval(t); cb(); } }, 200);
+  setTimeout(() => clearInterval(t), 8000);
+}
 
 const PLATFORMS = [
   { id: 'instagram', name: 'Instagram', emoji: '📸', hint: 'Visual hooks, 15–30 hashtags' },
@@ -139,6 +173,13 @@ generateBtn.onclick = async () => {
   if (!topic.value.trim()) { alert('Please enter a topic first.'); return; }
   if (selectedPlatforms.size === 0) { alert('Please select at least one platform.'); return; }
 
+  // Turnstile: if a real site key is configured, the challenge must be solved first.
+  let tsToken = '';
+  if (TURNSTILE_SITE_KEY) {
+    tsToken = getTurnstileToken();
+    if (!tsToken) { alert('Please complete the human verification first.'); return; }
+  }
+
   generateBtn.disabled = true;
   generateBtn.textContent = 'Generating…';
   result.hidden = true;
@@ -148,6 +189,8 @@ generateBtn.onclick = async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        token: tsToken,
+        uuid: getDeviceId(),
         platforms: [...selectedPlatforms],
         style: selectedStyle,
         tone,
@@ -161,7 +204,9 @@ generateBtn.onclick = async () => {
       markUsed();
       refreshLimitUI();
       result.hidden = false;
-      resultBody.innerHTML = '<p class="pl-name">Daily limit reached</p>You have used your free credit for today. Join the waitlist to unlock unlimited generations.</p>';
+      resultBody.innerHTML =
+        '<p style="color:#f87171;font-weight:700;margin:0 0 8px;">今日免费额度已用完，请升级 Pro</p>' +
+        '<p style="color:#a1a1aa;font-size:14px;margin:0;">You have used your free daily generation. Leave your email and we\'ll unlock unlimited generations when Pro launches.</p>';
       return;
     }
 
@@ -171,11 +216,13 @@ generateBtn.onclick = async () => {
     renderResult(text);
     markUsed();
     refreshLimitUI();
+    // Require a fresh Turnstile token for the next generation.
+    if (TURNSTILE_SITE_KEY && window.turnstile) { try { window.turnstile.reset(); } catch {} }
   } catch (err) {
     result.hidden = false;
     resultBody.innerHTML =
       '<p style="color:#f87171;font-weight:700;">Generation service is warming up.</p>' +
-      '<p style="color:#6B6B78;font-size:14px;">The AI backend is being connected. Please try again in a moment, or join the waitlist to be notified when everything is live.</p>';
+      '<p style="color:#a1a1aa;font-size:14px;">The AI backend is being connected. Please try again in a moment, or join the waitlist to be notified when everything is live.</p>';
   } finally {
     if (!limitReached()) {
       generateBtn.disabled = false;
@@ -259,5 +306,25 @@ document.getElementById('waitlistSubmit').onclick = async () => {
   }
 };
 
+// ---------- Pricing modal (Creem fallback) ----------
+const pricingModal = document.getElementById('pricingModal');
+function openPricing() {
+  pricingModal.hidden = false;
+  document.getElementById('pricingNote').hidden = true;
+}
+function closePricing() { pricingModal.hidden = true; }
+pricingModal.querySelectorAll('[data-close-pricing]').forEach((el) => (el.onclick = closePricing));
+document.getElementById('navPricing').addEventListener('click', (e) => { e.preventDefault(); openPricing(); });
+document.getElementById('getProBtn').onclick = () => {
+  const note = document.getElementById('pricingNote');
+  note.hidden = false;
+  note.textContent = 'Payment is coming soon, please leave your email.';
+  closePricing();
+  openWaitlist();
+};
+
 // Year in footer
 document.getElementById('year').textContent = new Date().getFullYear();
+
+// Render the Turnstile widget once the script is ready (no-op in dev mode)
+whenTurnstileReady(initTurnstile);

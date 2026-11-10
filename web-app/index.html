@@ -97,7 +97,7 @@
     <div class="nav-inner">
       <a class="nav-brand" href="/">✨ SocialPostAI <span>Pro</span></a>
       <nav class="nav-links">
-        <a class="nav-link" href="/#pricing">Pricing</a>
+        <a class="nav-link" href="#" id="navPricing">Pricing</a>
         <a class="nav-link" href="/faq.html">FAQ</a>
         <a class="nav-link nav-login" href="/#login">Login</a>
       </nav>
@@ -187,6 +187,11 @@
             <button class="generate" id="generateBtn">Generate copy</button>
             <p class="disclaimer">AI-generated content is for reference only. Please review manually before publishing.</p>
 
+            <!-- Turnstile (human verification) — rendered only when a site key is set -->
+            <div class="turnstile-wrap" id="turnstileWrap" hidden>
+              <div class="cf-turnstile" data-sitekey=""></div>
+            </div>
+
             <!-- Result -->
             <div class="result" id="result" hidden>
               <div class="result-head">
@@ -257,6 +262,26 @@
     </div>
   </div>
 
+  <!-- ===== Pricing modal (Creem fallback — displays real price, collects email) ===== -->
+  <div class="modal" id="pricingModal" hidden>
+    <div class="modal-backdrop" data-close-pricing></div>
+    <div class="modal-card pricing-card">
+      <button class="modal-x" data-close-pricing aria-label="Close">✕</button>
+      <div class="pricing-badge">Pro</div>
+      <h2>SocialPostAI Pro</h2>
+      <div class="price"><span class="price-amt">$9.99</span><span class="price-per">/ month</span></div>
+      <ul class="pricing-features">
+        <li><span class="tick">✓</span> Unlimited AI generations</li>
+        <li><span class="tick">✓</span> All 5 platforms (IG, TikTok, X, LinkedIn, Facebook)</li>
+        <li><span class="tick">✓</span> English &amp; 中文 output</li>
+        <li><span class="tick">✓</span> Tone / style / length control</li>
+      </ul>
+      <button class="get-pro" id="getProBtn">Get Pro</button>
+      <p class="pricing-note" id="pricingNote" hidden></p>
+    </div>
+  </div>
+
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   <script src="/app.js"></script>
 </body>
 </html>

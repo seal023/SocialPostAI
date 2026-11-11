@@ -39,6 +39,7 @@ html, body {
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  overflow-x: hidden; /* guard against any incidental horizontal scroll on small screens */
 }
 
 ::selection { background: rgba(129, 140, 248, 0.35); color: #fff; }
@@ -258,6 +259,16 @@ html, body {
 }
 
 .card { padding: 22px 22px 26px; background: transparent; }
+/* Manage Subscription (shown to Pro users only) — subtle link-style button under the plan tag */
+.manage-sub {
+  display: inline-block; margin: 0 0 16px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--primary-d); font-size: 12.5px; font-weight: 700;
+  padding: 7px 13px; border-radius: 999px; cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.manage-sub:hover { border-color: var(--accent); background: var(--surface-2); }
+.manage-sub:disabled { opacity: 0.5; cursor: wait; }
 .plan-tag {
   display: inline-block;
   font-size: 12px; font-weight: 600; color: var(--primary-d);
@@ -456,12 +467,25 @@ html, body {
 .footer-fine { font-size: 11px; color: var(--muted); margin: 0; line-height: 1.5; }
 
 /* ===== Modal ===== */
-.modal { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+/* Mobile-safe: modal area respects the iOS/Android browser bars and any soft keyboard;
+   the card itself scrolls so tall content (pricing/limit) is never clipped off-screen. */
+.modal {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  z-index: 100; padding: 20px;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+}
 .modal[hidden] { display: none; }
 .modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); }
 .modal-card {
   position: relative; background: #0e0e12; border: 1px solid var(--border-strong); border-radius: 20px; padding: 26px 22px;
   width: 100%; max-width: 380px; box-shadow: 0 30px 80px rgba(0,0,0,0.7);
+  max-height: calc(100dvh - 48px - env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+@supports not (height: 100dvh) {
+  .modal-card { max-height: calc(100vh - 48px - env(safe-area-inset-bottom, 0px)); }
 }
 .modal-x { position: absolute; top: 14px; right: 16px; border: none; background: none; font-size: 18px; color: var(--muted); cursor: pointer; }
 .modal-x:hover { color: #fff; }
@@ -509,7 +533,8 @@ html, body {
   flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 10px; font-weight: 800; color: #fff;
-  background: var(--accent-soft); border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
   box-shadow: 0 0 0 3px rgba(129,140,248,0.10);
 }
 .get-pro {
@@ -555,9 +580,59 @@ html, body {
 .pro-activate { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); text-align: left; }
 .pro-activate-title { font-weight: 700; color: #fff; margin: 0 0 4px; font-size: 15px; }
 .pro-activate-sub { font-size: 13px; color: var(--sub); margin: 0 0 12px; line-height: 1.5; }
+.limit-recover-title { font-size: 14px; color: #e4e4e7; text-align: center; margin: 20px 0 10px; font-weight: 600; }
+.pricing-secure { font-size: 12.5px; line-height: 1.6; color: var(--muted); text-align: center; margin: 18px 2px 0; padding-top: 14px; border-top: 1px solid var(--border); }
 @media (max-width: 460px) {
   .pricing-cards { flex-direction: column; }
 }
+
+/* ===== Landing page (home) ===== */
+.landing {
+  position: relative;
+  z-index: 1;
+  min-height: calc(100vh - var(--nav-h));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--nav-h) + 24px) 20px 64px;
+}
+.landing-hero { text-align: center; max-width: 880px; }
+.landing-title {
+  font-size: clamp(40px, 8.2vw, 86px);
+  line-height: 1.04;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 22px;
+  background: linear-gradient(180deg, #ffffff 0%, #c9c9d6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.landing-sub {
+  font-size: clamp(15px, 2.3vw, 20px);
+  line-height: 1.55;
+  color: var(--sub);
+  max-width: 600px;
+  margin: 0 auto 38px;
+}
+.landing-cta {
+  display: inline-block;
+  padding: 16px 40px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  text-decoration: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-radius: 14px;
+  box-shadow: 0 10px 30px var(--accent-glow);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.landing-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 42px var(--accent-glow);
+}
+.landing-footer { position: relative; z-index: 1; }
+.landing-footer .footer-links { justify-content: center; }
 
 /* ===== Legal pages (dark) ===== */
 .legal { position: relative; z-index: 1; max-width: 720px; margin: 0 auto; padding: calc(var(--nav-h) + 36px) 20px 60px; }

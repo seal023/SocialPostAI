@@ -223,6 +223,7 @@ generateBtn.onclick = async () => {
       body: JSON.stringify({
         uuid: getDeviceId(),
         email: getProEmail(),
+        checkoutId: localStorage.getItem('spai_checkout_id') || '',
         platforms: [selectedPlatform],
         style: selectedStyle,
         tone,
@@ -467,39 +468,95 @@ limitUnlockBtn.onclick = async () => {
   }
 };
 
-// ---------- Welcome back (returned from Creem with ?email=) ----------
+// ---------- Payment-success return (Creem redirect) ----------
+// Official Creem success_url parameters (docs.creem.io/features/checkout/checkout-api):
+//   checkout_id, order_id, customer_id, subscription_id, product_id, request_id, signature
+// Creem does NOT include the buyer's email in the redirect. We resolve it server-side
+// via /api/claim-checkout (webhook KV index, with redirect-signature fallback), so a
+// paying customer is NEVER asked to type an email again and NEVER sees the Pricing modal.
+const CREEM_RETURN_KEYS = [
+  'checkout_id', 'order_id', 'subscription_id', 'customer_id', 'product_id',
+  'request_id', 'signature', 'email', 'customer_email', 'paid', 'success', 'activated',
+];
+
 const welcomeModal = document.getElementById('welcomeModal');
 function closeWelcome() { welcomeModal.hidden = true; }
 welcomeModal.querySelectorAll('[data-close-welcome]').forEach((el) => (el.onclick = closeWelcome));
 
-// If returned from Creem checkout (no email param), open Pricing with the activation prompt.
-(function onLoadPro() {
-  const q = new URLSearchParams(window.location.search);
-  if (q.has('email')) return; // handled by onLoadWelcome below
-  const signals = ['order_id', 'creem', 'checkout_id', 'subscription_id', 'activated'];
-  if (signals.some((s) => q.has(s))) {
-    history.replaceState(null, '', window.location.pathname);
-    openPricing();
-    proActivate.hidden = false;
+// Silently exchange checkout_id for the real payer email. Retries while the Creem
+// webhook is in flight. Never blocks or changes the success dialog.
+async function claimCheckout(checkoutId, rawQuery) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      const res = await fetch(`${WORKER_URL}/api/claim-checkout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checkoutId, rawQuery }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (d && d.pro) {
+        const identity = String(d.email || d.identity || '').trim().toLowerCase();
+        if (identity) {
+          localStorage.setItem('spai_pro_email', identity);
+          refreshLimitUI();
+          const line = document.getElementById('welcomeEmail');
+          if (line && d.email) {
+            line.textContent = `Your access is linked to ${d.email}. Please keep this email safe to log in on other devices.`;
+          }
+        }
+        if (d.email) return; // real email resolved — done
+      }
+    } catch (e) { /* transient network error — retry */ }
+    await new Promise((r) => setTimeout(r, 1500));
   }
+}
+
+(function onPaymentReturn() {
+  const rawQuery = window.location.search.replace(/^\?/, '');
+  if (!rawQuery) return;
+  const q = new URLSearchParams(rawQuery);
+  if (!CREEM_RETURN_KEYS.some((k) => q.has(k))) return;
+
+  const checkoutId = q.get('checkout_id') || q.get('order_id') || q.get('subscription_id') || '';
+  const urlEmail = String(q.get('email') || q.get('customer_email') || '').trim().toLowerCase();
+  const validEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(urlEmail) ? urlEmail : '';
+
+  // Grant Pro on this device immediately — before any network call.
+  const identity = validEmail || (checkoutId ? `checkout:${checkoutId}` : 'pro@local');
+  localStorage.setItem('spai_pro_email', identity);
+  if (checkoutId) localStorage.setItem('spai_checkout_id', checkoutId);
+  refreshLimitUI();
+
+  const text = document.getElementById('welcomeText');
+  if (text) text.textContent = 'Congratulations! Your payment was successful. You now have up to 50 generations per day.';
+  const line = document.getElementById('welcomeEmail');
+  if (line) line.textContent = validEmail
+    ? `Your access is linked to ${validEmail}. Please keep this email safe to log in on other devices.`
+    : 'Your access is being linked to your payment email…';
+  welcomeModal.hidden = false;
+
+  // Clean the URL so a refresh never replays the dialog (keep any hash intact).
+  try { history.replaceState(null, '', window.location.pathname + window.location.hash); } catch { /* no-op */ }
+
+  // Background: bind the real payment email without any user input.
+  if (checkoutId) claimCheckout(checkoutId, rawQuery);
 })();
 
-// Creem success redirect may carry ?email=... — greet the user and link Pro on this device.
-(function onLoadWelcome() {
-  const q = new URLSearchParams(window.location.search);
-  if (!q.has('email')) return;
-  const email = q.get('email').trim().toLowerCase();
-  history.replaceState(null, '', window.location.pathname);
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return;
-  localStorage.setItem('spai_pro_email', email);
+const welcomeStartBtn = document.getElementById('welcomeStartBtn');
+if (welcomeStartBtn) welcomeStartBtn.onclick = () => {
+  closeWelcome();
   refreshLimitUI();
-  const t = document.getElementById('welcomeText');
-  if (t) t.textContent = `Your access is linked to ${email}. Please keep this email safe to log in on other devices.`;
-  welcomeModal.hidden = false;
-})();
+  const card = document.querySelector('.window');
+  if (card && card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const t = document.getElementById('topic');
+  if (t && t.focus) t.focus({ preventScroll: true });
+};
+const welcomeAnnualLink = document.getElementById('welcomeAnnualLink');
+if (welcomeAnnualLink) welcomeAnnualLink.onclick = (e) => { e.preventDefault(); window.location.href = CREEM_LINKS.annual; };
 
 // Landing "Pricing" link arrives as /app.html#pricing — open the pricing modal here.
-if (location.hash === '#pricing') { openPricing(); }
+// A payment-success return always wins: never show Pricing on top of the welcome dialog.
+if (location.hash === '#pricing' && welcomeModal.hidden) { openPricing(); }
 
 // Year in footer
 document.getElementById('year').textContent = new Date().getFullYear();

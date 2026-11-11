@@ -199,6 +199,9 @@ generateBtn.onclick = async () => {
       }),
     });
 
+    const ctype = (res.headers.get('content-type') || '').toLowerCase();
+
+    // Rate-limited: Worker returns a JSON 429 — show the message, don't try to stream.
     if (res.status === 429) {
       let msg = '今日免费额度已用完，请升级 Pro';
       try { const e = await res.json(); if (e && e.message) msg = e.message; } catch {}
@@ -211,14 +214,15 @@ generateBtn.onclick = async () => {
       return;
     }
 
-    if (!res.ok) {
+    // Anything that isn't a streaming text response is treated as an error.
+    if (!ctype.includes('text/plain')) {
       let detail = '';
-      try { const e = await res.json(); detail = e.detail || e.error || ''; } catch {}
+      try { const e = await res.json(); detail = e.detail || e.error || e.message || ''; } catch {}
       throw new Error(`HTTP ${res.status}${detail ? ' — ' + detail : ''}`);
     }
-    const data = await res.json();
-    const text = data.text || data.data || '';
-    renderResult(text);
+
+    // Streaming: reveal the card instantly, then append text as tokens arrive.
+    await streamIntoResult(res, selectedPlatform);
     markUsed();
     refreshLimitUI();
   } catch (err) {
@@ -237,12 +241,39 @@ generateBtn.onclick = async () => {
 // Highlight [Visual]/[Voiceover] (and 画面/口播) labels for TikTok scripts so creators can scan them fast.
 function highlightTags(escapedHtml, platform) {
   if (platform !== 'tiktok') return escapedHtml;
-  return escapedHtml.replace(/\[(Visual|Voiceover|画面|口播)\]/g, '<span class="tag-hl">$&</span>');
+  return escapedHtml.replace(/$$(Visual|Voiceover|画面|口播)$$/g, '<span class="tag-hl">$&</span>');
 }
 function renderResult(text) {
   result.hidden = false;
   const outName = PLATFORM_OUTPUT[selectedPlatform] || 'Content';
   resultBody.innerHTML = `<p class="pl-name">${outName}</p>${highlightTags(escapeHtml(text), selectedPlatform)}`;
+}
+
+// Stream the Worker's text/plain response into the result card, token by token.
+// The card opens the instant the first byte arrives; a caret blinks while streaming;
+// when the stream ends we do a final escape + TikTok [Visual]/[口播] highlight pass.
+async function streamIntoResult(res, platform) {
+  result.hidden = false;
+  const outName = PLATFORM_OUTPUT[platform] || 'Content';
+  resultBody.innerHTML =
+    `<p class="pl-name">${outName}</p><span class="stream-text"></span><span class="stream-cursor" aria-hidden="true"></span>`;
+  const textSpan = resultBody.querySelector('.stream-text');
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let full = '';
+  result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      full += decoder.decode(value, { stream: true });
+      textSpan.textContent = full;
+    }
+  } catch (e) {
+    full += '\n[stream interrupted]';
+  }
+  full += decoder.decode();
+  resultBody.innerHTML = `<p class="pl-name">${outName}</p>${highlightTags(escapeHtml(full), platform)}`;
 }
 function escapeHtml(s) {
   return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));

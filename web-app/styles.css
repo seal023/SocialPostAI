@@ -381,6 +381,22 @@ html, body {
   margin: 1px 0;
 }
 
+/* Streaming text + blinking caret (fluid/typing effect) */
+.result-body .stream-text { white-space: pre-wrap; line-height: 1.65; font-size: 14.5px; color: #d4d4d8; }
+.stream-cursor {
+  display: inline-block;
+  width: 7px; height: 1.05em;
+  background: var(--primary);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  border-radius: 2px;
+  animation: caret-blink 1s steps(1, end) infinite;
+}
+@keyframes caret-blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .stream-cursor { animation: none; opacity: 0.6; }
+}
+
 /* Limit note */
 .limit-note {
   margin-top: 18px; background: rgba(129,140,248,0.08); border: 1px solid rgba(129,140,248,0.3);

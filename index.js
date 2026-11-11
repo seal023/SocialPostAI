@@ -1,182 +1,254 @@
-import { registerRootComponent } from 'expo';
-
-import App from './App';
-
-// ============================================================
-// JS fatal guard — iOS 26 + A18 Pro + Release 平台 bug 兜底
-// ------------------------------------------------------------
-// 背景（build 9 崩溃根因）：在 iPhone 17 Pro (A18 Pro) + iOS 26 +
-// Release 构建组合下，任何 JS fatal error（如 unhandled rejection）
-// 都会经 RCTExceptionsManager.reportFatal → RCTGetFatalHandler →
-// objc_exception_throw → std::terminate 被放大成原生崩溃。
-// 这是 RN/iOS 26 平台已知问题（GitHub #55337 / #57014），
-// 并非本 App 独有；官方修复在 RN 0.85.0-rc.7，未 backport 到 0.83。
+// SocialPostAI Web — Cloudflare Worker proxy
+// POST /api/generate     : high-freq guard (5/min/IP) -> Pro (50/day by email) | Free (1/day by IP+device)
+//                           -> call DashScope (Bailian) per platform -> return text
+// POST /api/waitlist     : store an email lead (Creem fallback)
+// POST /api/creem-webhook: Creem payment webhook -> mark email as Pro in KV
 //
-// 本守卫做的事情：
-//   1) 用 ErrorUtils.setGlobalHandler 接管所有 JS fatal/soft error；
-//   2) 故意不调用原始 handler → 阻止 native reportFatal → App 不崩；
-//   3) 把错误详情写入 AsyncStorage，供 App.js 启动时弹窗展示，
-//      从而拿到具体错误信息以定位根因。
-//
-// 注意：拦截 ≠ 修复。错误本身仍可能存在，只是不再导致闪退。
-// ============================================================
+// Secrets (Settings -> Variables -> Secrets):  DASHSCOPE_API_KEY, CREEM_WEBHOOK_SECRET (optional; verify skipped if unset)
+// Plain text (Settings -> Variables):          DASHSCOPE_BASE_URL, DASHSCOPE_MODEL
+// KV (Settings -> Bindings, REQUIRED for limits): variable name RATE_LIMIT
+//   - Free = 1 gen/day per (IP OR device)
+//   - Pro  = 50 gen/day per email (set by Creem webhook into pro:<email>)
+//   - High-freq guard = 5 req/min per IP (applies to everyone)
+// NOTE: Turnstile human verification is DISABLED. Any failure returns readable JSON — never a bare 502.
 
-const JS_FATAL_KEY = '@SocialPostAI:jsFatalErrors';
-const MAX_FATAL_RECORDS = 10;
+import { getPrompt, normalizeWordCount, lengthTokens } from './prompts.js';
 
-function persistFatalError(detail) {
-  try {
-    // 懒加载：handler 被调用时才触碰 AsyncStorage，
-    // 避免在启动最早期加载原生模块（build 8 的教训）。
-    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-    AsyncStorage.getItem(JS_FATAL_KEY)
-      .then((raw) => {
-        let list = [];
-        try {
-          list = raw ? JSON.parse(raw) : [];
-        } catch (e) {
-          list = [];
-        }
-        if (!Array.isArray(list)) list = [];
-        list.unshift(detail);
-        list = list.slice(0, MAX_FATAL_RECORDS);
-        return AsyncStorage.setItem(JS_FATAL_KEY, JSON.stringify(list));
-      })
-      .catch(() => {
-        // 持久化失败不影响主流程
-      });
-  } catch (e) {
-    // AsyncStorage 不可用时静默失败
-  }
-}
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
 
-function installJSFatalGuard() {
-  if (typeof ErrorUtils === 'undefined' || typeof ErrorUtils.setGlobalHandler !== 'function') {
-    return;
-  }
-  ErrorUtils.setGlobalHandler((error, isFatal) => {
-    const detail = {
-      time: new Date().toISOString(),
-      fatal: !!isFatal,
-      name: error && error.name ? String(error.name) : 'UnknownError',
-      message: error && error.message ? String(error.message) : String(error),
-      stack:
-        error && error.stack
-          ? String(error.stack)
-              .split('\n')
-              .slice(0, 30)
-              .join('\n')
-          : '(no stack)',
-    };
+const PRO_DAILY = 50;        // Pro generations per day, per email
+const FREQ_PER_MIN = 5;      // max requests per minute per IP (anti-abuse)
+const FREE_DAILY = 1;        // free generations per day per (IP OR device) — production value
 
-    // 1) 持久化证据（Release 下 console 会被剥离，AsyncStorage 才是可靠通道）
-    persistFatalError(detail);
-
-    // 2) 控制台尽力输出（Debug/Dev 下可见）
-    try {
-      console.error('[JSFatalGuard] intercepted:', JSON.stringify(detail, null, 2));
-    } catch (e) {}
-
-    // 3) 关键：不调用原始 handler。
-    //    默认 handler 会调 native RCTExceptionsManager.reportFatal，
-    //    在 iOS 26 + A18 Pro + Release 下必然 std::terminate 崩溃。
-    //    这里直接吞掉，让 App 继续存活，从而能进入购买流程截图送审。
+function json(data, status, headers = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...CORS, ...headers },
   });
 }
 
-installJSFatalGuard();
-
-// ============================================================
-// Layer 2 — patch ExceptionsManager TurboModule（框架级）
-// ------------------------------------------------------------
-// build 10 崩溃证明：ErrorUtils 只拦「JS 引擎级」错误，而
-// React/RN 框架内部（React 19 onUncaughtError 默认处理器、
-// unhandled rejection 的框架上报路径等）会直接调用
-//   NativeExceptionsManager.reportException({ isFatal: true })
-// 走 TurboModule 通道上报原生 → reportFatal → std::terminate。
-// 这条路径完全绕过 ErrorUtils，必须直接在 TurboModule 层堵住。
-//
-// 做法：替换 ExceptionsManager 的 reportException/reportFatal，
-// 记录错误详情到 AsyncStorage 后吞掉（不转发给原生）。
-// ============================================================
-
-function formatExceptionData(data) {
-  let message = '(no message)';
-  let stack = '(no stack)';
-  let fatal = true;
-  try {
-    if (data && typeof data === 'object') {
-      fatal = !!data.isFatal;
-      if (data.message) message = String(data.message);
-      else if (data.exceptionMessage) message = String(data.exceptionMessage);
-      if (Array.isArray(data.stack)) {
-        stack = data.stack
-          .map(
-            (f) =>
-              `${f.methodName || '?'} @ ${f.file || '?'}:${f.lineNumber || '?'}:${f.column || '?'}`,
-          )
-          .join('\n');
-      } else if (typeof data.stack === 'string') {
-        stack = data.stack;
-      } else if (data.componentStack) {
-        stack = String(data.componentStack);
-      }
-    } else if (data) {
-      message = String(data);
-    }
-  } catch (e) {}
-  return { message, stack, fatal };
+function utcDay() {
+  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+}
+function utcMinute() {
+  return new Date().toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM (UTC minute bucket)
+}
+function secondsToUtcMidnight() {
+  const now = new Date();
+  const midnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0));
+  return Math.max(1, Math.floor((midnight - now) / 1000));
 }
 
-function installExceptionsManagerPatch() {
+// Safe KV helpers — never throw. If KV is unbound/misconfigured, generation still proceeds.
+async function kvGet(kv, key) {
+  if (!kv) return null;
+  try { return await kv.get(key); } catch (e) { console.error('KV get failed:', String(e)); return null; }
+}
+async function kvPut(kv, key, value, ttl) {
+  if (!kv) return;
+  try { await kv.put(key, value, { expirationTtl: ttl }); } catch (e) { console.error('KV put failed:', String(e)); }
+}
+
+async function callDashScope(systemPrompt, topic, env, maxTokens) {
+  const base = env.DASHSCOPE_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+  if (!env.DASHSCOPE_API_KEY) {
+    throw new Error('Missing DASHSCOPE_API_KEY secret. Set it in Worker -> Settings -> Variables -> Secrets.');
+  }
+  let r;
   try {
-    const { NativeModules, TurboModuleRegistry } = require('react-native');
-    const EM =
-      (TurboModuleRegistry && TurboModuleRegistry.get('ExceptionsManager')) ||
-      NativeModules.ExceptionsManager ||
-      null;
-    if (!EM) return;
+    r = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.DASHSCOPE_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: env.DASHSCOPE_MODEL || 'qwen-plus',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: topic },
+        ],
+        temperature: 0.85,
+        max_tokens: maxTokens,
+      }),
+    });
+  } catch (e) {
+    throw new Error(`Network error reaching DashScope (${base}): ${String(e)}`);
+  }
+  const raw = await r.text();
+  if (!r.ok) {
+    throw new Error(`DashScope HTTP ${r.status}: ${raw.slice(0, 600)}`);
+  }
+  let j;
+  try { j = JSON.parse(raw); } catch { throw new Error(`DashScope returned non-JSON body: ${raw.slice(0, 600)}`); }
+  const content = j?.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error(`DashScope returned no choices/content. Body: ${raw.slice(0, 600)}`);
+  }
+  return content.trim();
+}
 
-    if (typeof EM.reportException === 'function') {
-      EM.reportException = (data) => {
-        try {
-          const fmt = formatExceptionData(data);
-          persistFatalError({
-            time: new Date().toISOString(),
-            fatal: fmt.fatal,
-            name: 'NativeExceptionsManager.reportException',
-            message: fmt.message,
-            stack: fmt.stack.split('\n').slice(0, 30).join('\n'),
-            via: 'reportException',
-          });
-        } catch (e) {}
-        // 吞掉：不转发 → 阻止 reportFatal → std::terminate 崩溃
-      };
+// HMAC-SHA256 hex (Web Crypto) for Creem webhook signature verification.
+async function hmacHex(key, data) {
+  const enc = new TextEncoder();
+  const cryptoKey = await crypto.subtle.importKey('raw', enc.encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', cryptoKey, enc.encode(data));
+  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function handle(request, env, ctx) {
+  const url = new URL(request.url);
+  const path = url.pathname;
+
+  if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
+  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+
+  // ---- Creem webhook: mark payer email as Pro ----
+  if (path === '/api/creem-webhook') {
+    const secret = env.CREEM_WEBHOOK_SECRET;
+    let raw;
+    if (secret) {
+      raw = await request.clone().text();
+      const sig = request.headers.get('x-creem-signature') || '';
+      let expected = '';
+      try { expected = await hmacHex(secret, raw); } catch { expected = ''; }
+      // Creem may send "sha256=<hex>"; compare the hex part.
+      const got = sig.includes('=') ? sig.slice(sig.indexOf('=') + 1) : sig;
+      if (!sig || got !== expected) return json({ error: 'bad_signature' }, 401);
+    } else {
+      raw = await request.text();
     }
+    let b;
+    try { b = JSON.parse(raw); } catch { return json({ error: 'bad_json' }, 400); }
+    const event = (b.event_type || b.type || b.event || '').toString();
+    const obj = b.object || b.data || {};
+    const custEmail =
+      obj?.customer?.email || obj?.customer_email || obj?.metadata?.email ||
+      b.customer?.email || '';
+    const status = (obj?.status || b.status || '').toString();
+    const isPaid = /completed|active|paid|success|trialing/i.test(event + ' ' + status);
+    if (isPaid && custEmail && env.RATE_LIMIT) {
+      const rec = { until: Date.now() + 366 * 86400000, plan: obj?.product?.id || '', ts: Date.now() };
+      await kvPut(env.RATE_LIMIT, `pro:${custEmail.toLowerCase()}`, JSON.stringify(rec), 366 * 86400);
+      return json({ ok: true, activated: custEmail }, 200);
+    }
+    return json({ ok: true, ignored: true }, 200);
+  }
 
-    if (typeof EM.reportFatal === 'function') {
-      EM.reportFatal = (e) => {
-        try {
-          persistFatalError({
-            time: new Date().toISOString(),
-            fatal: true,
-            name: 'NativeExceptionsManager.reportFatal',
-            message: (e && (e.message || String(e))) || '(no message)',
-            stack: (e && e.stack) ? String(e.stack).split('\n').slice(0, 30).join('\n') : '(no stack)',
-            via: 'reportFatal',
-          });
-        } catch (err) {}
-        // 吞掉
-      };
+  // ---- Waitlist lead ----
+  if (path === '/api/waitlist') {
+    let b;
+    try { b = await request.json(); } catch { return json({ error: 'bad_json' }, 400); }
+    const email = String(b.email || '').trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: 'invalid_email' }, 400);
+    await kvPut(env.RATE_LIMIT, `wl:${Date.now()}:${email}`, JSON.stringify({ email, ts: Date.now() }));
+    return json({ ok: true, message: "You're on the list!" }, 200);
+  }
+
+  // ---- Generate ----
+  if (path !== '/api/generate') return json({ error: 'not_found' }, 404);
+
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'bad_json' }, 400); }
+
+  const platforms = Array.isArray(body.platforms) ? body.platforms : (body.platform ? [body.platform] : []);
+  const topic = (body.topic || '').toString().trim();
+  if (!topic || platforms.length === 0) return json({ error: 'missing_topic_or_platform' }, 400);
+
+  const ip = request.headers.get('cf-connecting-ip') || '';
+
+  // 1) High-frequency guard (applies to Free AND Pro)
+  const minute = utcMinute();
+  const freqKey = `freq:${ip}:${minute}`;
+  let freq = parseInt(await kvGet(env.RATE_LIMIT, freqKey)) || 0;
+  if (freq >= FREQ_PER_MIN) {
+    return json({ error: 'rate_limited', message: 'Too many requests. Please wait a minute and try again (max 5 per minute).', retry_after: 60 }, 429);
+  }
+  freq += 1;
+  ctx.waitUntil(kvPut(env.RATE_LIMIT, freqKey, String(freq), 120));
+
+  // 2) Pro status (email verified server-side by the Creem webhook)
+  const email = (body.email || '').toString().trim().toLowerCase();
+  let isPro = false;
+  if (email && env.RATE_LIMIT) {
+    const rec = await kvGet(env.RATE_LIMIT, `pro:${email}`);
+    if (rec) {
+      try { const o = JSON.parse(rec); if (!o.until || o.until > Date.now()) isPro = true; } catch {}
+    }
+  }
+
+  // 3) Quota enforcement
+  const day = utcDay();
+  if (isPro) {
+    const pk = `pro_rl:${email}:${day}`;
+    let used = parseInt(await kvGet(env.RATE_LIMIT, pk)) || 0;
+    if (used >= PRO_DAILY) {
+      return json(
+        { error: 'pro_quota_used', message: `Pro daily limit reached (${PRO_DAILY}/day). It resets at 00:00 UTC.`, retry_after: secondsToUtcMidnight() },
+        429
+      );
+    }
+    ctx.waitUntil(kvPut(env.RATE_LIMIT, pk, String(used + 1), secondsToUtcMidnight() + 60));
+  } else {
+    const ipKey = `rl:${day}:ip:${ip}`;
+    const devKey = `rl:${day}:dev:${body.uuid || 'anon'}`;
+    const [ipRaw, devRaw] = await Promise.all([
+      kvGet(env.RATE_LIMIT, ipKey),
+      kvGet(env.RATE_LIMIT, devKey),
+    ]);
+    const ipUsed = parseInt(ipRaw) || 0;
+    const devUsed = parseInt(devRaw) || 0;
+    const freeUsed = Math.max(ipUsed, devUsed);
+    if (freeUsed >= FREE_DAILY) {
+      return json(
+        { error: 'free_quota_used', message: `Daily free limit reached (${FREE_DAILY}/day). Please upgrade to Pro.`, retry_after: secondsToUtcMidnight() },
+        429
+      );
+    }
+    const ttl = secondsToUtcMidnight() + 60;
+    ctx.waitUntil(Promise.all([
+      kvPut(env.RATE_LIMIT, ipKey, String(ipUsed + 1), ttl),
+      kvPut(env.RATE_LIMIT, devKey, String(devUsed + 1), ttl),
+    ]));
+  }
+
+  // 4) Call DashScope (Bailian) once per platform, in requested order
+  const boundedInt = (v, fallback, min, max) => {
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+  };
+  const opts = {
+    language: body.outputLanguage === 'zh' ? 'Chinese' : 'English',
+    style: String(body.style || 'lively').slice(0, 40),
+    tone: boundedInt(body.tone, 5, 0, 10),
+    wordCount: boundedInt(body.wordCount, 180, 50, 500),
+  };
+  const parts = [];
+  try {
+    for (const p of platforms) {
+      const maxTokens = lengthTokens(normalizeWordCount(opts.wordCount, p));
+      const text = await callDashScope(getPrompt(p, opts), topic, env, maxTokens);
+      parts.push(text);
     }
   } catch (e) {
-    // patch 失败不影响启动；ErrorUtils 层仍在
+    return json({ error: 'generation_failed', detail: String(e) }, 502);
   }
+
+  const text = parts.join('\n\n---\n\n');
+  return json({ text, plan: isPro ? 'pro' : 'free' }, 200);
 }
 
-installExceptionsManagerPatch();
-
-// registerRootComponent calls AppRegistry.registerComponent('main', () => App);
-// It also ensures that whether you load the app in Expo Go or in a native build,
-// the environment is set up appropriately
-registerRootComponent(App);
+export default {
+  async fetch(request, env, ctx) {
+    try {
+      return await handle(request, env, ctx);
+    } catch (err) {
+      // Safety net: never a bare Cloudflare 502. Always emit a readable JSON error.
+      return json({ error: 'worker_exception', detail: String((err && err.stack) || err) }, 500);
+    }
+  },
+};

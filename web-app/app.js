@@ -53,7 +53,7 @@ const STYLES = [
 
 const TONE_WORDS = ['Very formal','Formal','Professional','Formal-warm','Polite','Balanced','Trendy','Casual','Very casual','Slangy','Spoken'];
 
-const selectedPlatform = 'tiktok';
+let selectedPlatform = 'tiktok';
 let outputLang = 'en';
 let selectedStyle = 'lively';
 let tone = 5;
@@ -72,7 +72,7 @@ function markUsed() {
 }
 function limitReached() {
   if (isPro()) return false; // Pro is enforced server-side (up to 50/day)
-  return usedToday() >= 1;   // Free tier = 1 credit/day
+  return usedToday() >= 100; // TEST: relaxed cap for pre-launch testing — set back to 1 before launch
 }
 
 // ---------- Render: platform chips (single-select) ----------
@@ -161,7 +161,7 @@ function refreshLimitUI() {
     genBtn.disabled = true;
     genBtn.textContent = 'Daily limit reached';
   } else {
-    planTag.textContent = 'Free · 1 credit/day';
+    planTag.textContent = 'Free · testing (100/day)';
     limitNote.hidden = true;
     genBtn.disabled = false;
     genBtn.textContent = 'Generate Content';

@@ -7,6 +7,11 @@
 // Set this to your Worker's production URL.
 const WORKER_URL = 'https://api.socialpostai.app';
 
+// Paste your Cloudflare Turnstile SITE KEY here to enable human verification.
+// Leave as '' to keep it disabled (dev). The Worker only enforces it once TURNSTILE_SECRET is set on its side.
+const TURNSTILE_SITE_KEY = '';
+let cfToken = '';
+
 // ---------- Device fingerprint (for rate limiting) ----------
 function getDeviceId() {
   let id = localStorage.getItem('spai_uuid');
@@ -24,6 +29,29 @@ function getProEmail() {
 }
 function isPro() {
   return !!getProEmail();
+}
+
+// Render the Turnstile widget once the Cloudflare script is ready.
+// Only shows when TURNSTILE_SITE_KEY is set; the Worker enforces the token.
+function renderTurnstile() {
+  if (!TURNSTILE_SITE_KEY) return;
+  const wrap = document.getElementById('turnstileWrap');
+  if (wrap) wrap.hidden = false;
+  const tryRender = () => {
+    if (window.turnstile) {
+      window.turnstile.render('#turnstileWidget', {
+        sitekey: TURNSTILE_SITE_KEY,
+        appearance: 'interaction-only',
+        theme: 'dark',
+        callback: (t) => { cfToken = t; },
+        'expired-callback': () => { cfToken = ''; },
+        'error-callback': () => { cfToken = ''; },
+      });
+    } else {
+      setTimeout(tryRender, 200);
+    }
+  };
+  tryRender();
 }
 
 // ---------- Platform list ----------
@@ -72,7 +100,7 @@ function markUsed() {
 }
 function limitReached() {
   if (isPro()) return false; // Pro is enforced server-side (up to 50/day)
-  return usedToday() >= 1; // TEST: relaxed cap for pre-launch testing — set back to 1 before launch
+  return usedToday() >= 1; // free plan: 1 generation per day
 }
 
 // ---------- Render: platform chips (single-select) ----------
@@ -166,18 +194,23 @@ function refreshLimitUI() {
     genBtn.disabled = false;
     genBtn.textContent = 'Generate Content';
   }
+  const mgr = document.getElementById('manageSubBtn');
+  if (mgr) mgr.hidden = !isPro();
 }
 refreshLimitUI();
+renderTurnstile();
 
 // ---------- Generate ----------
 const result = document.getElementById('result');
 const resultBody = document.getElementById('resultBody');
 const generateBtn = document.getElementById('generateBtn');
+const manageSubBtn = document.getElementById('manageSubBtn');
 
 generateBtn.onclick = async () => {
-  if (limitReached()) { openWaitlist(); return; }
+  if (limitReached()) { openLimitModal(); return; }
   if (!topic.value.trim()) { alert('Please enter a topic first.'); return; }
   if (!selectedPlatform) { alert('Please select a platform.'); return; }
+  if (TURNSTILE_SITE_KEY && !cfToken) { alert('Please complete the human verification first.'); return; }
 
   generateBtn.disabled = true;
   generateBtn.textContent = 'Generating…';
@@ -196,6 +229,7 @@ generateBtn.onclick = async () => {
         wordCount,
         topic: topic.value.trim(),
         outputLanguage: outputLang,
+        cfToken,
       }),
     });
 
@@ -203,14 +237,27 @@ generateBtn.onclick = async () => {
 
     // Rate-limited: Worker returns a JSON 429 — show the message, don't try to stream.
     if (res.status === 429) {
-      let msg = '今日免费额度已用完，请升级 Pro';
+      let msg = 'Daily free limit reached.';
       try { const e = await res.json(); if (e && e.message) msg = e.message; } catch {}
       markUsed();
       refreshLimitUI();
       result.hidden = false;
       resultBody.innerHTML =
         `<p style="color:#f87171;font-weight:700;margin:0 0 8px;">${escapeHtml(msg)}</p>` +
-        '<p style="color:#a1a1aa;font-size:14px;margin:0;">Upgrade to Pro for up to 50 generations per day.</p>';
+        '<p style="color:#a1a1aa;font-size:14px;margin:0 0 12px;">Upgrade to Pro for up to 50 generations per day.</p>' +
+        '<button class="get-pro" id="inlineUpgradeBtn" style="max-width:240px;">Upgrade to Pro</button>';
+      const ib = document.getElementById('inlineUpgradeBtn');
+      if (ib) ib.onclick = () => { window.location.href = CREEM_LINKS.monthly; };
+      return;
+    }
+
+    // Captcha failed at the edge — prompt a fresh solve.
+    if (res.status === 403) {
+      let msg = 'Please complete the human verification.';
+      try { const e = await res.json(); if (e && e.message) msg = e.message; } catch {}
+      result.hidden = false;
+      resultBody.innerHTML = `<p style="color:#f87171;font-weight:700;margin:0;">${escapeHtml(msg)}</p>`;
+      if (window.turnstile && TURNSTILE_SITE_KEY) { try { window.turnstile.reset(); } catch {} cfToken = ''; }
       return;
     }
 
@@ -225,6 +272,8 @@ generateBtn.onclick = async () => {
     await streamIntoResult(res, selectedPlatform);
     markUsed();
     refreshLimitUI();
+    // Free users solve once per generation; Pro keeps a valid (auto-refreshed) token.
+    if (!isPro() && window.turnstile && TURNSTILE_SITE_KEY) { try { window.turnstile.reset(); } catch {} cfToken = ''; }
   } catch (err) {
     result.hidden = false;
     resultBody.innerHTML =
@@ -289,51 +338,8 @@ document.getElementById('copyBtn').onclick = () => {
   });
 };
 
-// ---------- Waitlist modal ----------
-const modal = document.getElementById('waitlistModal');
-function openWaitlist() { modal.hidden = false; document.getElementById('waitlistEmail').focus(); }
-function closeWaitlist() { modal.hidden = true; }
-modal.querySelectorAll('[data-close]').forEach((el) => (el.onclick = closeWaitlist));
-document.getElementById('waitlistFromLimit').onclick = openWaitlist;
-
-document.getElementById('waitlistSubmit').onclick = async () => {
-  const email = document.getElementById('waitlistEmail').value.trim();
-  const status = document.getElementById('waitlistStatus');
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    status.className = 'waitlist-status err';
-    status.textContent = 'Please enter a valid email.';
-    return;
-  }
-  status.className = 'waitlist-status';
-  status.textContent = 'Submitting…';
-  try {
-    const res = await fetch(`${WORKER_URL}/api/waitlist`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
-    if (res.ok || res.status === 404 || res.status === 502) {
-      // Worker may not be deployed yet — still acknowledge locally.
-      status.className = 'waitlist-status ok';
-      status.textContent = "You're on the list! We'll email you at launch. 🎉";
-      document.getElementById('waitlistEmail').value = '';
-      setTimeout(closeWaitlist, 1800);
-    } else {
-      throw new Error('submit failed');
-    }
-  } catch (e) {
-    // Offline / Worker not ready: keep email locally so we don't lose the lead.
-    const saved = JSON.parse(localStorage.getItem('spai_waitlist') || '[]');
-    saved.push({ email, ts: Date.now() });
-    localStorage.setItem('spai_waitlist', JSON.stringify(saved));
-    status.className = 'waitlist-status ok';
-    status.textContent = "Saved! We'll be in touch at launch. 🎉";
-    document.getElementById('waitlistEmail').value = '';
-    setTimeout(closeWaitlist, 1800);
-  }
-};
-
 // ---------- Pricing modal (two plans + Pro activation) ----------
+// (The old waitlist modal was replaced by the limit modal below.)
 const CREEM_LINKS = {
   monthly: 'https://www.creem.io/payment/prod_4Thpo8gm2uZlxCVAfMtwi9',
   annual: 'https://www.creem.io/payment/prod_5roUxqOnOKvxOwkeGfFGcq',
@@ -346,29 +352,130 @@ document.getElementById('navPricing').addEventListener('click', (e) => { e.preve
 document.getElementById('getMonthlyBtn').onclick = () => { window.location.href = CREEM_LINKS.monthly; };
 document.getElementById('getAnnualBtn').onclick = () => { window.location.href = CREEM_LINKS.annual; };
 
-// Pro activation (email-based; verified server-side via Creem webhook into KV)
+// Pro activation inside the Pricing modal (email-based; verified server-side via Creem webhook into KV)
 const proActivate = document.getElementById('proActivate');
 const proEmailInput = document.getElementById('proEmail');
 const proActivateBtn = document.getElementById('proActivateBtn');
 const proActivateStatus = document.getElementById('proActivateStatus');
 document.getElementById('activateProLink').onclick = (e) => { e.preventDefault(); proActivate.hidden = false; proEmailInput.focus(); };
-proActivateBtn.onclick = () => {
+proActivateBtn.onclick = async () => {
   const email = proEmailInput.value.trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     proActivateStatus.className = 'waitlist-status err';
     proActivateStatus.textContent = 'Please enter a valid email.';
     return;
   }
-  localStorage.setItem('spai_pro_email', email);
-  proActivateStatus.className = 'waitlist-status ok';
-  proActivateStatus.textContent = 'Pro activated on this device — generations now use your Pro quota.';
-  refreshLimitUI();
-  setTimeout(closePricing, 1600);
+  proActivateStatus.className = 'waitlist-status';
+  proActivateStatus.textContent = 'Verifying…';
+  try {
+    const res = await fetch(`${WORKER_URL}/api/verify-pro`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data && data.pro) {
+      localStorage.setItem('spai_pro_email', email);
+      proActivateStatus.className = 'waitlist-status ok';
+      proActivateStatus.textContent = 'Pro activated on this device — generations now use your Pro quota.';
+      refreshLimitUI();
+      setTimeout(closePricing, 1600);
+    } else {
+      proActivateStatus.className = 'waitlist-status err';
+      proActivateStatus.textContent = 'No Pro plan found for this email. Double-check the address you used at checkout.';
+    }
+  } catch (e) {
+    proActivateStatus.className = 'waitlist-status err';
+    proActivateStatus.textContent = 'Verification failed (network). Please try again.';
+  }
 };
 
-// If returned from Creem checkout, open pricing modal with the activation prompt.
+// ---------- Login button -> open Pricing (no real account system; Pro is email-based) ----------
+const navLogin = document.getElementById('navLogin');
+if (navLogin) navLogin.addEventListener('click', (e) => { e.preventDefault(); openPricing(); });
+
+// ---------- Manage Subscription (Pro only) -> Creem customer portal ----------
+if (manageSubBtn) {
+  manageSubBtn.onclick = async () => {
+    const email = getProEmail();
+    if (!email) return;
+    const orig = manageSubBtn.textContent;
+    manageSubBtn.disabled = true;
+    manageSubBtn.textContent = 'Opening…';
+    try {
+      const res = await fetch(`${WORKER_URL}/api/creem-portal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (d && d.url) {
+        window.open(d.url, '_blank');
+      } else {
+        alert(d && d.message ? d.message : 'Could not open the subscription manager. Please contact support.');
+      }
+    } catch (e) {
+      alert('Failed to open the subscription manager. Please contact support.');
+    } finally {
+      manageSubBtn.disabled = false;
+      manageSubBtn.textContent = orig;
+    }
+  };
+}
+
+// ---------- Limit reached modal (upgrade + Pro recovery) ----------
+const limitModal = document.getElementById('limitModal');
+function openLimitModal() { limitModal.hidden = false; const e = document.getElementById('limitEmail'); if (e) e.focus(); }
+function closeLimitModal() { limitModal.hidden = true; }
+limitModal.querySelectorAll('[data-close-limit]').forEach((el) => (el.onclick = closeLimitModal));
+document.getElementById('waitlistFromLimit').onclick = openLimitModal; // card's "Upgrade to Pro" link
+document.getElementById('limitUpgradeBtn').onclick = () => { window.location.href = CREEM_LINKS.monthly; };
+
+// Pro recovery: verify the payment email server-side, then unlock Pro on this device.
+const limitEmailInput = document.getElementById('limitEmail');
+const limitUnlockBtn = document.getElementById('limitUnlockBtn');
+const limitUnlockStatus = document.getElementById('limitUnlockStatus');
+limitUnlockBtn.onclick = async () => {
+  const email = limitEmailInput.value.trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    limitUnlockStatus.className = 'waitlist-status err';
+    limitUnlockStatus.textContent = 'Please enter a valid email.';
+    return;
+  }
+  limitUnlockStatus.className = 'waitlist-status';
+  limitUnlockStatus.textContent = 'Verifying…';
+  try {
+    const res = await fetch(`${WORKER_URL}/api/verify-pro`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data && data.pro) {
+      localStorage.setItem('spai_pro_email', email);
+      limitUnlockStatus.className = 'waitlist-status ok';
+      limitUnlockStatus.textContent = 'Pro unlocked! Your generations now use the Pro quota.';
+      refreshLimitUI();
+      setTimeout(closeLimitModal, 1600);
+    } else {
+      limitUnlockStatus.className = 'waitlist-status err';
+      limitUnlockStatus.textContent = 'No Pro plan found for this email. Double-check the address, or upgrade below.';
+    }
+  } catch (e) {
+    limitUnlockStatus.className = 'waitlist-status err';
+    limitUnlockStatus.textContent = 'Verification failed (network). Please try again.';
+  }
+};
+
+// ---------- Welcome back (returned from Creem with ?email=) ----------
+const welcomeModal = document.getElementById('welcomeModal');
+function closeWelcome() { welcomeModal.hidden = true; }
+welcomeModal.querySelectorAll('[data-close-welcome]').forEach((el) => (el.onclick = closeWelcome));
+
+// If returned from Creem checkout (no email param), open Pricing with the activation prompt.
 (function onLoadPro() {
   const q = new URLSearchParams(window.location.search);
+  if (q.has('email')) return; // handled by onLoadWelcome below
   const signals = ['order_id', 'creem', 'checkout_id', 'subscription_id', 'activated'];
   if (signals.some((s) => q.has(s))) {
     history.replaceState(null, '', window.location.pathname);
@@ -376,6 +483,23 @@ proActivateBtn.onclick = () => {
     proActivate.hidden = false;
   }
 })();
+
+// Creem success redirect may carry ?email=... — greet the user and link Pro on this device.
+(function onLoadWelcome() {
+  const q = new URLSearchParams(window.location.search);
+  if (!q.has('email')) return;
+  const email = q.get('email').trim().toLowerCase();
+  history.replaceState(null, '', window.location.pathname);
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return;
+  localStorage.setItem('spai_pro_email', email);
+  refreshLimitUI();
+  const t = document.getElementById('welcomeText');
+  if (t) t.textContent = `Your access is linked to ${email}. Please keep this email safe to log in on other devices.`;
+  welcomeModal.hidden = false;
+})();
+
+// Landing "Pricing" link arrives as /app.html#pricing — open the pricing modal here.
+if (location.hash === '#pricing') { openPricing(); }
 
 // Year in footer
 document.getElementById('year').textContent = new Date().getFullYear();

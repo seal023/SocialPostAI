@@ -18,6 +18,14 @@ function getDeviceId() {
   return id;
 }
 
+// ---------- Pro status (email-based; verified server-side via Creem webhook) ----------
+function getProEmail() {
+  return (localStorage.getItem('spai_pro_email') || '').trim().toLowerCase();
+}
+function isPro() {
+  return !!getProEmail();
+}
+
 // ---------- Platform list ----------
 const PLATFORMS = [
   { id: 'instagram', name: 'Instagram', emoji: '📸', hint: 'Visual hooks, 15–30 hashtags' },
@@ -36,7 +44,7 @@ const STYLES = [
 
 const TONE_WORDS = ['Very formal','Formal','Professional','Formal-warm','Polite','Balanced','Trendy','Casual','Very casual','Slangy','Spoken'];
 
-const selectedPlatforms = new Set(['tiktok', 'instagram']);
+const selectedPlatform = 'tiktok';
 let outputLang = 'en';
 let selectedStyle = 'lively';
 let tone = 5;
@@ -54,32 +62,28 @@ function markUsed() {
   localStorage.setItem(todayKey(), String(usedToday() + 1));
 }
 function limitReached() {
-  return usedToday() >= 1; // Free tier = 1 credit/day
+  if (isPro()) return false; // Pro is enforced server-side (up to 50/day)
+  return usedToday() >= 1;   // Free tier = 1 credit/day
 }
 
-// ---------- Render: platform chips ----------
+// ---------- Render: platform chips (single-select) ----------
 const platformChips = document.getElementById('platformChips');
 PLATFORMS.forEach((p) => {
   const b = document.createElement('button');
-  b.className = 'chip' + (selectedPlatforms.has(p.id) ? ' active' : '');
+  b.className = 'chip' + (p.id === selectedPlatform ? ' active' : '');
   b.textContent = `${p.emoji} ${p.name}`;
   b.onclick = () => {
-    if (selectedPlatforms.has(p.id)) selectedPlatforms.delete(p.id);
-    else selectedPlatforms.add(p.id);
-    b.classList.toggle('active');
+    selectedPlatform = p.id;
+    [...platformChips.children].forEach((c) => c.classList.remove('active'));
+    b.classList.add('active');
     updatePlatformHint();
   };
   platformChips.appendChild(b);
 });
 function updatePlatformHint() {
   const hint = document.getElementById('platformHint');
-  if (selectedPlatforms.size === 0) {
-    hint.textContent = 'Select one or more platforms.';
-  } else {
-    const names = PLATFORMS.filter((p) => selectedPlatforms.has(p.id)).map((p) => p.name).join(', ');
-    const hints = PLATFORMS.filter((p) => selectedPlatforms.has(p.id)).map((p) => `${p.emoji} ${p.name}: ${p.hint}`).join('  ·  ');
-    hint.textContent = hints;
-  }
+  const p = PLATFORMS.find((x) => x.id === selectedPlatform);
+  hint.textContent = p ? `${p.emoji} ${p.name}: ${p.hint}` : 'Select one platform.';
 }
 updatePlatformHint();
 
@@ -127,7 +131,12 @@ function refreshLimitUI() {
   const planTag = document.getElementById('planTag');
   const limitNote = document.getElementById('limitNote');
   const genBtn = document.getElementById('generateBtn');
-  if (limitReached()) {
+  if (isPro()) {
+    planTag.textContent = 'Pro · up to 50/day';
+    limitNote.hidden = true;
+    genBtn.disabled = false;
+    genBtn.textContent = 'Generate copy';
+  } else if (limitReached()) {
     planTag.textContent = 'Free · used today';
     limitNote.hidden = false;
     genBtn.disabled = true;
@@ -149,7 +158,7 @@ const generateBtn = document.getElementById('generateBtn');
 generateBtn.onclick = async () => {
   if (limitReached()) { openWaitlist(); return; }
   if (!topic.value.trim()) { alert('Please enter a topic first.'); return; }
-  if (selectedPlatforms.size === 0) { alert('Please select at least one platform.'); return; }
+  if (!selectedPlatform) { alert('Please select a platform.'); return; }
 
   generateBtn.disabled = true;
   generateBtn.textContent = 'Generating…';
@@ -161,7 +170,8 @@ generateBtn.onclick = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         uuid: getDeviceId(),
-        platforms: [...selectedPlatforms],
+        email: getProEmail(),
+        platforms: [selectedPlatform],
         style: selectedStyle,
         tone,
         wordCount,
@@ -171,12 +181,14 @@ generateBtn.onclick = async () => {
     });
 
     if (res.status === 429) {
+      let msg = '今日免费额度已用完，请升级 Pro';
+      try { const e = await res.json(); if (e && e.message) msg = e.message; } catch {}
       markUsed();
       refreshLimitUI();
       result.hidden = false;
       resultBody.innerHTML =
-        '<p style="color:#f87171;font-weight:700;margin:0 0 8px;">今日免费额度已用完，请升级 Pro</p>' +
-        '<p style="color:#a1a1aa;font-size:14px;margin:0;">You have used your free daily generation. Leave your email and we\'ll unlock unlimited generations when Pro launches.</p>';
+        `<p style="color:#f87171;font-weight:700;margin:0 0 8px;">${escapeHtml(msg)}</p>` +
+        '<p style="color:#a1a1aa;font-size:14px;margin:0;">Upgrade to Pro for up to 50 generations per day.</p>';
       return;
     }
 
@@ -205,20 +217,9 @@ generateBtn.onclick = async () => {
 
 function renderResult(text) {
   result.hidden = false;
-  // Split multi-platform output on "---" separators
-  const parts = text.split(/\s*(?:---+|——+)\s*/).map((s) => s.trim()).filter(Boolean);
-  let html = '';
-  if (parts.length > 1) {
-    const ids = [...selectedPlatforms];
-    parts.forEach((part, i) => {
-      const id = ids[i];
-      const name = id ? (PLATFORMS.find((p) => p.id === id)?.name || '') : '';
-      html += `<p class="pl-name">${name ? name + ' — ' : ''}Copy ${i + 1}</p>${escapeHtml(part)}`;
-    });
-  } else {
-    html = escapeHtml(text);
-  }
-  resultBody.innerHTML = html;
+  const p = PLATFORMS.find((x) => x.id === selectedPlatform);
+  const name = p ? p.name : '';
+  resultBody.innerHTML = `<p class="pl-name">${name ? name + ' — ' : ''}Copy</p>${escapeHtml(text)}`;
 }
 function escapeHtml(s) {
   return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -278,19 +279,49 @@ document.getElementById('waitlistSubmit').onclick = async () => {
   }
 };
 
-// ---------- Pricing modal (Creem fallback) ----------
+// ---------- Pricing modal (two plans + Pro activation) ----------
+const CREEM_LINKS = {
+  monthly: 'https://www.creem.io/payment/prod_4Thpo8gm2uZlxCVAfMtwi9',
+  annual: 'https://www.creem.io/payment/prod_5roUxqOnOKvxOwkeGfFGcq',
+};
 const pricingModal = document.getElementById('pricingModal');
-function openPricing() {
-  pricingModal.hidden = false;
-  document.getElementById('pricingNote').hidden = true;
-}
+function openPricing() { pricingModal.hidden = false; }
 function closePricing() { pricingModal.hidden = true; }
 pricingModal.querySelectorAll('[data-close-pricing]').forEach((el) => (el.onclick = closePricing));
 document.getElementById('navPricing').addEventListener('click', (e) => { e.preventDefault(); openPricing(); });
-document.getElementById('getProBtn').onclick = () => {
-  // Real Creem checkout — send the user straight to the payment page.
-  window.location.href = 'https://www.creem.io/payment/prod_4Thpo8gm2uZlxCVAfMtwi9';
+document.getElementById('getMonthlyBtn').onclick = () => { window.location.href = CREEM_LINKS.monthly; };
+document.getElementById('getAnnualBtn').onclick = () => { window.location.href = CREEM_LINKS.annual; };
+
+// Pro activation (email-based; verified server-side via Creem webhook into KV)
+const proActivate = document.getElementById('proActivate');
+const proEmailInput = document.getElementById('proEmail');
+const proActivateBtn = document.getElementById('proActivateBtn');
+const proActivateStatus = document.getElementById('proActivateStatus');
+document.getElementById('activateProLink').onclick = (e) => { e.preventDefault(); proActivate.hidden = false; proEmailInput.focus(); };
+proActivateBtn.onclick = () => {
+  const email = proEmailInput.value.trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    proActivateStatus.className = 'waitlist-status err';
+    proActivateStatus.textContent = 'Please enter a valid email.';
+    return;
+  }
+  localStorage.setItem('spai_pro_email', email);
+  proActivateStatus.className = 'waitlist-status ok';
+  proActivateStatus.textContent = 'Pro activated on this device — generations now use your Pro quota.';
+  refreshLimitUI();
+  setTimeout(closePricing, 1600);
 };
+
+// If returned from Creem checkout, open pricing modal with the activation prompt.
+(function onLoadPro() {
+  const q = new URLSearchParams(window.location.search);
+  const signals = ['order_id', 'creem', 'checkout_id', 'subscription_id', 'activated'];
+  if (signals.some((s) => q.has(s))) {
+    history.replaceState(null, '', window.location.pathname);
+    openPricing();
+    proActivate.hidden = false;
+  }
+})();
 
 // Year in footer
 document.getElementById('year').textContent = new Date().getFullYear();

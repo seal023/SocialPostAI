@@ -38,15 +38,15 @@
         "@type": "Offer",
         "name": "Pro Monthly",
         "priceCurrency": "USD",
-        "price": "9.99",
-        "description": "Unlimited generations across all platforms"
+        "price": "5.99",
+        "description": "Up to 50 AI generations per day across all platforms"
       },
       {
         "@type": "Offer",
         "name": "Pro Annual",
         "priceCurrency": "USD",
-        "price": "29.99",
-        "description": "Unlimited generations across all platforms, billed yearly"
+        "price": "49.99",
+        "description": "Up to 50 AI generations per day across all platforms, billed yearly (save ~30%)"
       }
     ],
     "availableLanguage": ["English", "Chinese"]
@@ -72,7 +72,7 @@
       {
         "@type": "Question",
         "name": "How much does SocialPostAI cost?",
-        "acceptedAnswer": { "@type": "Answer", "text": "You get 1 free generation per day, and Pro plans start at $9.99/month." }
+        "acceptedAnswer": { "@type": "Answer", "text": "You get 1 free generation per day, and Pro plans are $5.99/month or $49.99/year." }
       },
       {
         "@type": "Question",
@@ -143,7 +143,7 @@
             <section class="block">
               <label class="block-title">Target platforms</label>
               <div class="chips" id="platformChips"></div>
-              <p class="hint" id="platformHint">Select one or more platforms.</p>
+              <p class="hint" id="platformHint">Select one platform.</p>
             </section>
 
             <!-- Topic -->
@@ -224,7 +224,7 @@
       </div>
       <div class="faq-item">
         <h3>How much does it cost?</h3>
-        <p>You get 1 free generation per day, and Pro plans start at $9.99/month.</p>
+        <p>You get 1 free generation per day, and Pro plans are $5.99/month or $49.99/year.</p>
       </div>
       <div class="faq-item">
         <h3>Is the generated social media copy ready to post?</h3>
@@ -260,22 +260,46 @@
     </div>
   </div>
 
-  <!-- ===== Pricing modal (Creem fallback — displays real price, collects email) ===== -->
+  <!-- ===== Pricing modal (two plans + Pro activation) ===== -->
   <div class="modal" id="pricingModal" hidden>
     <div class="modal-backdrop" data-close-pricing></div>
     <div class="modal-card pricing-card">
       <button class="modal-x" data-close-pricing aria-label="Close">✕</button>
-      <div class="pricing-badge">Pro</div>
       <h2>SocialPostAI Pro</h2>
-      <div class="price"><span class="price-amt">$9.99</span><span class="price-per">/ month</span></div>
-      <ul class="pricing-features">
-        <li><span class="tick">✓</span> Unlimited AI generations</li>
-        <li><span class="tick">✓</span> All 5 platforms (IG, TikTok, X, LinkedIn, Facebook)</li>
-        <li><span class="tick">✓</span> English &amp; 中文 output</li>
-        <li><span class="tick">✓</span> Tone / style / length control</li>
-      </ul>
-      <button class="get-pro" id="getProBtn">Get Pro</button>
+      <div class="pricing-cards">
+        <div class="price-card">
+          <div class="price-card-name">Monthly</div>
+          <div class="price"><span class="price-amt">$5.99</span><span class="price-per">/ month</span></div>
+          <ul class="pricing-features">
+            <li><span class="tick">✓</span> Up to 50 generations / day</li>
+            <li><span class="tick">✓</span> All 5 platforms</li>
+            <li><span class="tick">✓</span> English &amp; 中文 output</li>
+            <li><span class="tick">✓</span> Tone / style / length control</li>
+          </ul>
+          <button class="get-pro" id="getMonthlyBtn">Get Monthly</button>
+        </div>
+        <div class="price-card best">
+          <div class="price-card-tag">Best Value · Save 30%</div>
+          <div class="price-card-name">Annual</div>
+          <div class="price"><span class="price-amt">$49.99</span><span class="price-per">/ year</span></div>
+          <ul class="pricing-features">
+            <li><span class="tick">✓</span> Up to 50 generations / day</li>
+            <li><span class="tick">✓</span> All 5 platforms</li>
+            <li><span class="tick">✓</span> English &amp; 中文 output</li>
+            <li><span class="tick">✓</span> Tone / style / length control</li>
+          </ul>
+          <button class="get-pro" id="getAnnualBtn">Get Annual</button>
+        </div>
+      </div>
       <p class="pricing-note" id="pricingNote" hidden></p>
+      <div class="pro-activate" id="proActivate" hidden>
+        <p class="pro-activate-title">Already subscribed?</p>
+        <p class="pro-activate-sub">Enter the email you used at checkout to unlock Pro on this device.</p>
+        <input type="email" id="proEmail" class="email-input" placeholder="you@example.com" />
+        <button class="waitlist-submit" id="proActivateBtn">Activate Pro</button>
+        <p class="waitlist-status" id="proActivateStatus"></p>
+      </div>
+      <p class="pricing-activate"><a href="#" id="activateProLink">I already paid — activate Pro</a></p>
     </div>
   </div>
 

@@ -465,7 +465,7 @@ html, body {
 
 /* ===== Pricing modal (Creem fallback) ===== */
 .pricing-card {
-  max-width: 400px; text-align: center;
+  max-width: 470px; text-align: center;
   background: #0e0e12; border: 1px solid var(--border-strong); border-radius: 20px;
 }
 .pricing-badge {
@@ -495,6 +495,43 @@ html, body {
 }
 .get-pro:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px rgba(129,140,248,0.7), 0 16px 40px var(--accent-glow); }
 .pricing-note { font-size: 14px; color: var(--primary-d); font-weight: 700; margin: 14px 0 0; }
+
+/* ===== Pricing: two-plan cards ===== */
+.pricing-cards { display: flex; gap: 14px; margin: 6px 0 14px; }
+.price-card {
+  flex: 1 1 0; min-width: 0; display: flex; flex-direction: column;
+  border: 1px solid var(--border); border-radius: 16px; padding: 20px 14px 16px;
+  background: rgba(255,255,255,0.02);
+  position: relative;
+}
+.price-card.best {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 30px var(--accent-glow);
+}
+.price-card-tag {
+  position: absolute; top: -11px; left: 50%; transform: translateX(-50%);
+  font-size: 11px; font-weight: 800; letter-spacing: 0.3px; color: #fff; white-space: nowrap;
+  background: linear-gradient(120deg, var(--accent-2), var(--accent));
+  padding: 4px 12px; border-radius: 999px;
+}
+.price-card-name {
+  font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--sub); margin-bottom: 8px;
+}
+.price-card .price { margin-bottom: 12px; }
+.price-card .price-amt { font-size: 36px; }
+.price-card .pricing-features { flex: 1 1 auto; gap: 9px; margin-bottom: 16px; }
+.price-card .pricing-features li { font-size: 13px; }
+.price-card .get-pro { margin-top: auto; height: 46px; font-size: 15px; }
+.pricing-activate { margin: 12px 0 0; font-size: 13.5px; color: var(--sub); }
+.pricing-activate a { color: var(--accent); text-decoration: none; font-weight: 700; }
+.pricing-activate a:hover { text-decoration: underline; }
+.pro-activate { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); text-align: left; }
+.pro-activate-title { font-weight: 700; color: #fff; margin: 0 0 4px; font-size: 15px; }
+.pro-activate-sub { font-size: 13px; color: var(--sub); margin: 0 0 12px; line-height: 1.5; }
+@media (max-width: 460px) {
+  .pricing-cards { flex-direction: column; }
+}
 
 /* ===== Legal pages (dark) ===== */
 .legal { position: relative; z-index: 1; max-width: 720px; margin: 0 auto; padding: calc(var(--nav-h) + 36px) 20px 60px; }

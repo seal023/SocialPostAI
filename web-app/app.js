@@ -9,7 +9,7 @@ const WORKER_URL = 'https://api.socialpostai.app';
 
 // Paste your Cloudflare Turnstile SITE KEY here to enable human verification.
 // Leave as '' to keep it disabled (dev). The Worker only enforces it once TURNSTILE_SECRET is set on its side.
-const TURNSTILE_SITE_KEY = '0x4AAAAAAF8wcf4f27sns8_c';
+const TURNSTILE_SITE_KEY = '';
 let cfToken = '';
 
 // ---------- Device fingerprint (for rate limiting) ----------
@@ -23,12 +23,51 @@ function getDeviceId() {
   return id;
 }
 
+// ---------- Payment-success return (Creem redirect) ----------
+// Official Creem success_url parameters (docs.creem.io/features/checkout/checkout-api):
+//   checkout_id, order_id, customer_id, subscription_id, product_id, request_id, signature
+// Creem does NOT include the buyer's email in the redirect, so we resolve it server-side
+// via /api/claim-checkout. This detection runs BEFORE anything else (including the first
+// refreshLimitUI call), so a returning payer is Pro from the very first frame.
+const CREEM_RETURN_KEYS = [
+  'checkout_id', 'order_id', 'subscription_id', 'customer_id', 'product_id',
+  'request_id', 'signature', 'email', 'customer_email', 'paid', 'success', 'activated',
+];
+
+const PAYMENT_RETURN = (function detectPaymentReturn() {
+  const empty = { matched: false, rawQuery: '', checkoutId: '', email: '', identity: '' };
+  const rawQuery = window.location.search.replace(/^\?/, '');
+  if (!rawQuery) return empty;
+  let q;
+  try { q = new URLSearchParams(rawQuery); } catch { return empty; }
+  if (!CREEM_RETURN_KEYS.some((k) => q.has(k))) return empty;
+
+  const checkoutId = q.get('checkout_id') || q.get('order_id') || q.get('subscription_id') || '';
+  const urlEmail = String(q.get('email') || q.get('customer_email') || '').trim().toLowerCase();
+  const validEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(urlEmail) ? urlEmail : '';
+  const identity = validEmail || (checkoutId ? `checkout:${checkoutId}` : 'pro@local');
+  // Grant Pro on this device immediately — no network call, no modal, no email prompt.
+  try {
+    localStorage.setItem('spai_pro_email', identity);
+    if (checkoutId) localStorage.setItem('spai_checkout_id', checkoutId);
+  } catch { /* storage blocked: the URL flag below still unlocks the UI */ }
+  return { matched: true, rawQuery, checkoutId, email: validEmail, identity };
+})();
+
 // ---------- Pro status (email-based; verified server-side via Creem webhook) ----------
 function getProEmail() {
-  return (localStorage.getItem('spai_pro_email') || '').trim().toLowerCase();
+  let stored = '';
+  try { stored = (localStorage.getItem('spai_pro_email') || '').trim().toLowerCase(); } catch {}
+  if (stored) return stored;
+  return PAYMENT_RETURN.email || PAYMENT_RETURN.identity || '';
 }
 function isPro() {
-  return !!getProEmail();
+  // Hard guarantee: even if localStorage is unavailable, or any later script fails,
+  // a Creem success return is ALWAYS treated as Pro. No "free limit reached" prompt.
+  return !!getProEmail() || PAYMENT_RETURN.matched;
+}
+function getCheckoutId() {
+  try { return localStorage.getItem('spai_checkout_id') || ''; } catch { return PAYMENT_RETURN.checkoutId || ''; }
 }
 
 // Render the Turnstile widget once the Cloudflare script is ready.
@@ -147,7 +186,7 @@ document.getElementById('langSeg').addEventListener('click', (e) => {
   btn.classList.add('active');
 });
 
-// ---------- Auto-detect browser language (sets the DEFAULT selection only; 中文 option stays available) ----------
+// ---------- Auto-detect browser language (sets the AI OUTPUT language only, never the UI language; Chinese option stays available) ----------
 (function initLanguage() {
   const nav = (navigator.language || 'en').toLowerCase();
   const lang = nav.startsWith('zh') ? 'zh' : 'en';
@@ -223,7 +262,7 @@ generateBtn.onclick = async () => {
       body: JSON.stringify({
         uuid: getDeviceId(),
         email: getProEmail(),
-        checkoutId: localStorage.getItem('spai_checkout_id') || '',
+        checkoutId: getCheckoutId(),
         platforms: [selectedPlatform],
         style: selectedStyle,
         tone,
@@ -238,8 +277,23 @@ generateBtn.onclick = async () => {
 
     // Rate-limited: Worker returns a JSON 429 — show the message, don't try to stream.
     if (res.status === 429) {
-      let msg = 'Daily free limit reached.';
-      try { const e = await res.json(); if (e && e.message) msg = e.message; } catch {}
+      let msg = 'Daily free limit reached. Please upgrade to Pro.';
+      let code = '';
+      try {
+        const e = await res.json();
+        if (e && e.message) msg = e.message;
+        if (e && e.error) code = e.error;
+      } catch {}
+      // A payer whose server-side Pro record is still syncing must NEVER be shown a
+      // "free limit reached" prompt. Retry the silent checkout claim in the background.
+      if (isPro() && code === 'free_quota_used') {
+        if (PAYMENT_RETURN.checkoutId) claimCheckout(PAYMENT_RETURN.checkoutId, PAYMENT_RETURN.rawQuery);
+        refreshLimitUI();
+        result.hidden = false;
+        resultBody.innerHTML =
+          '<p style="color:#f87171;font-weight:700;margin:0;">Your Pro access is still syncing. Please wait a few seconds and try again.</p>';
+        return;
+      }
       markUsed();
       refreshLimitUI();
       result.hidden = false;
@@ -271,7 +325,7 @@ generateBtn.onclick = async () => {
 
     // Streaming: reveal the card instantly, then append text as tokens arrive.
     await streamIntoResult(res, selectedPlatform);
-    markUsed();
+    if (!isPro()) markUsed();
     refreshLimitUI();
     // Free users solve once per generation; Pro keeps a valid (auto-refreshed) token.
     if (!isPro() && window.turnstile && TURNSTILE_SITE_KEY) { try { window.turnstile.reset(); } catch {} cfToken = ''; }
@@ -288,10 +342,12 @@ generateBtn.onclick = async () => {
   }
 };
 
-// Highlight [Visual]/[Voiceover] (and 画面/口播) labels for TikTok scripts so creators can scan them fast.
+// Highlight [Visual]/[Voiceover] and the Chinese format tags in AI-generated TikTok scripts.
+// The Chinese characters below are Unicode escapes so this file contains no hard-coded
+// Chinese UI strings; they only ever match text produced by the AI, never interface copy.
 function highlightTags(escapedHtml, platform) {
   if (platform !== 'tiktok') return escapedHtml;
-  return escapedHtml.replace(/$$(Visual|Voiceover|画面|口播)$$/g, '<span class="tag-hl">$&</span>');
+  return escapedHtml.replace(/$$(Visual|Voiceover|\u753b\u9762|\u53e3\u64ad)$$/g, '<span class="tag-hl">$&</span>');
 }
 function renderResult(text) {
   result.hidden = false;
@@ -301,7 +357,7 @@ function renderResult(text) {
 
 // Stream the Worker's text/plain response into the result card, token by token.
 // The card opens the instant the first byte arrives; a caret blinks while streaming;
-// when the stream ends we do a final escape + TikTok [Visual]/[口播] highlight pass.
+// when the stream ends we do a final escape + TikTok [Visual]/[Voiceover] highlight pass.
 async function streamIntoResult(res, platform) {
   result.hidden = false;
   const outName = PLATFORM_OUTPUT[platform] || 'Content';
@@ -468,20 +524,14 @@ limitUnlockBtn.onclick = async () => {
   }
 };
 
-// ---------- Payment-success return (Creem redirect) ----------
-// Official Creem success_url parameters (docs.creem.io/features/checkout/checkout-api):
-//   checkout_id, order_id, customer_id, subscription_id, product_id, request_id, signature
-// Creem does NOT include the buyer's email in the redirect. We resolve it server-side
-// via /api/claim-checkout (webhook KV index, with redirect-signature fallback), so a
-// paying customer is NEVER asked to type an email again and NEVER sees the Pricing modal.
-const CREEM_RETURN_KEYS = [
-  'checkout_id', 'order_id', 'subscription_id', 'customer_id', 'product_id',
-  'request_id', 'signature', 'email', 'customer_email', 'paid', 'success', 'activated',
-];
-
+// ---------- Welcome dialog + silent Pro binding ----------
+// CREEM_RETURN_KEYS and PAYMENT_RETURN are defined at the top of this file so the
+// Pro grant happens before the first render. This section only handles the dialog.
 const welcomeModal = document.getElementById('welcomeModal');
-function closeWelcome() { welcomeModal.hidden = true; }
-welcomeModal.querySelectorAll('[data-close-welcome]').forEach((el) => (el.onclick = closeWelcome));
+function closeWelcome() { if (welcomeModal) welcomeModal.hidden = true; }
+if (welcomeModal) {
+  welcomeModal.querySelectorAll('[data-close-welcome]').forEach((el) => (el.onclick = closeWelcome));
+}
 
 // Silently exchange checkout_id for the real payer email. Retries while the Creem
 // webhook is in flight. Never blocks or changes the success dialog.
@@ -491,7 +541,7 @@ async function claimCheckout(checkoutId, rawQuery) {
       const res = await fetch(`${WORKER_URL}/api/claim-checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ checkoutId, rawQuery }),
+        body: JSON.stringify({ checkoutId, rawQuery, email: PAYMENT_RETURN.email }),
       });
       const d = await res.json().catch(() => ({}));
       if (d && d.pro) {
@@ -512,28 +562,19 @@ async function claimCheckout(checkoutId, rawQuery) {
 }
 
 (function onPaymentReturn() {
-  const rawQuery = window.location.search.replace(/^\?/, '');
-  if (!rawQuery) return;
-  const q = new URLSearchParams(rawQuery);
-  if (!CREEM_RETURN_KEYS.some((k) => q.has(k))) return;
+  if (!PAYMENT_RETURN.matched) return;
+  const { rawQuery, checkoutId, email: validEmail } = PAYMENT_RETURN;
 
-  const checkoutId = q.get('checkout_id') || q.get('order_id') || q.get('subscription_id') || '';
-  const urlEmail = String(q.get('email') || q.get('customer_email') || '').trim().toLowerCase();
-  const validEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(urlEmail) ? urlEmail : '';
-
-  // Grant Pro on this device immediately — before any network call.
-  const identity = validEmail || (checkoutId ? `checkout:${checkoutId}` : 'pro@local');
-  localStorage.setItem('spai_pro_email', identity);
-  if (checkoutId) localStorage.setItem('spai_checkout_id', checkoutId);
+  // Pro was already granted at the top of this file. Refresh the badge and show the
+  // success dialog — never the Pricing modal, never an email prompt.
   refreshLimitUI();
-
   const text = document.getElementById('welcomeText');
   if (text) text.textContent = 'Congratulations! Your payment was successful. You now have up to 50 generations per day.';
   const line = document.getElementById('welcomeEmail');
   if (line) line.textContent = validEmail
     ? `Your access is linked to ${validEmail}. Please keep this email safe to log in on other devices.`
     : 'Your access is being linked to your payment email…';
-  welcomeModal.hidden = false;
+  if (welcomeModal) welcomeModal.hidden = false;
 
   // Clean the URL so a refresh never replays the dialog (keep any hash intact).
   try { history.replaceState(null, '', window.location.pathname + window.location.hash); } catch { /* no-op */ }
@@ -556,7 +597,7 @@ if (welcomeAnnualLink) welcomeAnnualLink.onclick = (e) => { e.preventDefault(); 
 
 // Landing "Pricing" link arrives as /app.html#pricing — open the pricing modal here.
 // A payment-success return always wins: never show Pricing on top of the welcome dialog.
-if (location.hash === '#pricing' && welcomeModal.hidden) { openPricing(); }
+if (location.hash === '#pricing' && (!welcomeModal || welcomeModal.hidden)) { openPricing(); }
 
 // Year in footer
 document.getElementById('year').textContent = new Date().getFullYear();

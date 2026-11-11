@@ -266,13 +266,16 @@
     </div>
   </div>
 
-  <!-- ===== Welcome back (returned from Creem with ?email=) ===== -->
+  <!-- ===== Payment success (Creem redirect) ===== -->
   <div class="modal" id="welcomeModal" hidden>
     <div class="modal-backdrop" data-close-welcome></div>
-    <div class="modal-card">
+    <div class="modal-card welcome-card">
       <button class="modal-x" data-close-welcome aria-label="Close">✕</button>
       <h2>Welcome to Pro! 🎉</h2>
-      <p class="modal-sub" id="welcomeText"></p>
+      <p class="modal-sub" id="welcomeText">Congratulations! Your payment was successful. You now have up to 50 generations per day.</p>
+      <p class="welcome-email" id="welcomeEmail"></p>
+      <p class="welcome-upsell">Want to save 30%? <a href="#" id="welcomeAnnualLink">Check out our Annual plan.</a></p>
+      <button class="get-pro" id="welcomeStartBtn">Start Generating</button>
     </div>
   </div>
 

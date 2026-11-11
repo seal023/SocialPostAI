@@ -9,7 +9,7 @@ const WORKER_URL = 'https://api.socialpostai.app';
 
 // Paste your Cloudflare Turnstile SITE KEY here to enable human verification.
 // Leave as '' to keep it disabled (dev). The Worker only enforces it once TURNSTILE_SECRET is set on its side.
-const TURNSTILE_SITE_KEY = '';
+const TURNSTILE_SITE_KEY = '0x4AAAAAAF8wcf4f27sns8_c';
 let cfToken = '';
 
 // ---------- Device fingerprint (for rate limiting) ----------

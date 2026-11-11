@@ -533,8 +533,7 @@ html, body {
   flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 10px; font-weight: 800; color: #fff;
-  background: var(--accent-soft);
-  border: 1px solid var(--accent);
+  background: var(--accent-soft); border: 1px solid var(--accent);
   box-shadow: 0 0 0 3px rgba(129,140,248,0.10);
 }
 .get-pro {
@@ -582,6 +581,15 @@ html, body {
 .pro-activate-sub { font-size: 13px; color: var(--sub); margin: 0 0 12px; line-height: 1.5; }
 .limit-recover-title { font-size: 14px; color: #e4e4e7; text-align: center; margin: 20px 0 10px; font-weight: 600; }
 .pricing-secure { font-size: 12.5px; line-height: 1.6; color: var(--muted); text-align: center; margin: 18px 2px 0; padding-top: 14px; border-top: 1px solid var(--border); }
+
+/* ===== Payment-success (welcome) modal ===== */
+.welcome-card { text-align: center; }
+.welcome-card .modal-sub { font-size: 15px; color: #e4e4e7; line-height: 1.6; }
+.welcome-email { font-size: 12.5px; line-height: 1.55; color: var(--muted); margin: 0 0 18px; }
+.welcome-upsell { font-size: 13px; color: var(--sub); margin: 0 0 18px; }
+.welcome-upsell a { color: var(--primary-d); font-weight: 700; text-decoration: none; }
+.welcome-upsell a:hover { text-decoration: underline; }
+.welcome-card .get-pro { margin-top: 0; }
 @media (max-width: 460px) {
   .pricing-cards { flex-direction: column; }
 }

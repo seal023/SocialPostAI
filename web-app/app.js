@@ -72,7 +72,7 @@ function markUsed() {
 }
 function limitReached() {
   if (isPro()) return false; // Pro is enforced server-side (up to 50/day)
-  return usedToday() >= 100; // TEST: relaxed cap for pre-launch testing — set back to 1 before launch
+  return usedToday() >= 1; // TEST: relaxed cap for pre-launch testing — set back to 1 before launch
 }
 
 // ---------- Render: platform chips (single-select) ----------
@@ -161,7 +161,7 @@ function refreshLimitUI() {
     genBtn.disabled = true;
     genBtn.textContent = 'Daily limit reached';
   } else {
-    planTag.textContent = 'Free · testing (100/day)';
+    planTag.textContent = 'Free · 1 credit/day';
     limitNote.hidden = true;
     genBtn.disabled = false;
     genBtn.textContent = 'Generate Content';

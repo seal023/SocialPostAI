@@ -35,6 +35,15 @@ const PLATFORMS = [
   { id: 'facebook', name: 'Facebook', emoji: '👍', hint: 'Conversational, CTA' },
 ];
 
+// Display name of the generated artifact per platform (used in the result card title).
+const PLATFORM_OUTPUT = {
+  tiktok: 'TikTok Script',
+  instagram: 'Instagram Caption',
+  linkedin: 'LinkedIn Post',
+  x: 'X Post',
+  facebook: 'Facebook Post',
+};
+
 const STYLES = [
   { id: 'lively', name: 'Lively' },
   { id: 'formal', name: 'Formal' },
@@ -145,7 +154,7 @@ function refreshLimitUI() {
     planTag.textContent = 'Pro · up to 50/day';
     limitNote.hidden = true;
     genBtn.disabled = false;
-    genBtn.textContent = 'Generate copy';
+    genBtn.textContent = 'Generate Content';
   } else if (limitReached()) {
     planTag.textContent = 'Free · used today';
     limitNote.hidden = false;
@@ -155,7 +164,7 @@ function refreshLimitUI() {
     planTag.textContent = 'Free · 1 credit/day';
     limitNote.hidden = true;
     genBtn.disabled = false;
-    genBtn.textContent = 'Generate copy';
+    genBtn.textContent = 'Generate Content';
   }
 }
 refreshLimitUI();
@@ -220,16 +229,20 @@ generateBtn.onclick = async () => {
   } finally {
     if (!limitReached()) {
       generateBtn.disabled = false;
-      generateBtn.textContent = 'Generate copy';
+      generateBtn.textContent = 'Generate Content';
     }
   }
 };
 
+// Highlight [Visual]/[Voiceover] (and 画面/口播) labels for TikTok scripts so creators can scan them fast.
+function highlightTags(escapedHtml, platform) {
+  if (platform !== 'tiktok') return escapedHtml;
+  return escapedHtml.replace(/\[(Visual|Voiceover|画面|口播)\]/g, '<span class="tag-hl">$&</span>');
+}
 function renderResult(text) {
   result.hidden = false;
-  const p = PLATFORMS.find((x) => x.id === selectedPlatform);
-  const name = p ? p.name : '';
-  resultBody.innerHTML = `<p class="pl-name">${name ? name + ' — ' : ''}Copy</p>${escapeHtml(text)}`;
+  const outName = PLATFORM_OUTPUT[selectedPlatform] || 'Content';
+  resultBody.innerHTML = `<p class="pl-name">${outName}</p>${highlightTags(escapeHtml(text), selectedPlatform)}`;
 }
 function escapeHtml(s) {
   return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));

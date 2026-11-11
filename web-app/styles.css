@@ -370,6 +370,16 @@ html, body {
 .result-body { white-space: pre-wrap; line-height: 1.65; font-size: 14.5px; color: #d4d4d8; }
 .result-body .pl-name { font-weight: 800; color: var(--primary-d); margin: 14px 0 4px; }
 .result-body .pl-name:first-child { margin-top: 0; }
+.result-body .tag-hl {
+  display: inline-block;
+  font-weight: 800;
+  color: #c7d2fe;
+  background: rgba(129, 140, 248, 0.16);
+  border: 1px solid rgba(129, 140, 248, 0.5);
+  border-radius: 6px;
+  padding: 0 6px;
+  margin: 1px 0;
+}
 
 /* Limit note */
 .limit-note {

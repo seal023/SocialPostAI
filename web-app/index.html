@@ -4,21 +4,21 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#09090b" />
-  <title>SocialPostAI — AI Social Media Post Generator for Platform-Perfect Copy</title>
-  <meta name="description" content="SocialPostAI is an AI social media post generator that writes platform-perfect copy for Instagram, TikTok, X, LinkedIn and Facebook. Get 1 free generation per day in English or 中文." />
-  <meta name="keywords" content="AI social media post generator, platform-perfect copy, Instagram caption generator, TikTok script generator, LinkedIn post generator, social media copy AI, X post generator, Facebook post generator" />
+  <title>SocialPostAI — Write once. Win every platform.</title>
+  <meta name="description" content="SocialPostAI is the AI social media copy generator that creates platform-perfect posts for Instagram, TikTok, X, LinkedIn and Facebook in seconds. Get 1 free generation per day." />
+  <meta name="keywords" content="AI social media post generator, platform-perfect copy, Instagram caption generator, TikTok script generator, LinkedIn post generator" />
   <meta name="robots" content="index, follow, max-image-preview:large" />
   <link rel="canonical" href="https://socialpostai.app/" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="SocialPostAI — AI Social Media Post Generator" />
-  <meta property="og:description" content="Write platform-perfect social media copy for Instagram, TikTok, X, LinkedIn & Facebook with AI." />
+  <meta property="og:title" content="SocialPostAI — Write once. Win every platform." />
+  <meta property="og:description" content="The AI social media copy generator that creates platform-perfect posts in seconds." />
   <meta property="og:url" content="https://socialpostai.app/" />
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="SocialPostAI — AI Social Media Post Generator" />
-  <meta name="twitter:description" content="Platform-perfect AI social media copy for Instagram, TikTok, X, LinkedIn & Facebook." />
+  <meta name="twitter:title" content="SocialPostAI — Write once. Win every platform." />
+  <meta name="twitter:description" content="The AI social media copy generator that creates platform-perfect posts in seconds." />
 
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/styles.css" />
@@ -84,7 +84,7 @@
   </script>
 </head>
 <body>
-  <!-- ===== Ambient nebula / aurora background ===== -->
+  <!-- ===== Ambient nebula / aurora background (very subtle) ===== -->
   <div class="aurora" aria-hidden="true">
     <span class="blob blob-1"></span>
     <span class="blob blob-2"></span>
@@ -92,219 +92,44 @@
     <span class="grid"></span>
   </div>
 
-  <!-- ===== Top navigation bar (transparent floating) ===== -->
+  <!-- ===== Top navigation (minimal) ===== -->
   <header class="navbar">
     <div class="nav-inner">
       <a class="nav-brand" href="/">✨ SocialPostAI <span>Pro</span></a>
       <nav class="nav-links">
-        <a class="nav-link" href="#" id="navPricing">Pricing</a>
+        <a class="nav-link" href="/app.html">App</a>
+        <a class="nav-link" href="/app.html#pricing">Pricing</a>
         <a class="nav-link" href="/faq.html">FAQ</a>
-        <a class="nav-link nav-login" href="/#login">Login</a>
       </nav>
     </div>
   </header>
 
-  <!-- ===== Hero: left copy + right tool (desktop two-column) ===== -->
-  <main class="hero">
-    <div class="hero-grid">
-
-      <!-- Left: product pitch -->
-      <section class="hero-copy">
-        <div class="badge">AI copy that fits every feed</div>
-        <h1 class="hero-title">The AI social media post generator<br />that writes platform-perfect copy</h1>
-        <p class="hero-sub">Generate platform-perfect social media copy for Instagram, TikTok, X, LinkedIn &amp; Facebook — each draft tuned to that network's own voice, in seconds.</p>
-        <h2 class="section-h2">Built for every platform</h2>
-        <ul class="features">
-          <li><span class="tick">✓</span> One prompt → 5 platform-ready drafts</li>
-          <li><span class="tick">✓</span> Tone, style &amp; length, fully controllable</li>
-          <li><span class="tick">✓</span> English &amp; 中文 output</li>
-        </ul>
-        <div class="hero-meta">
-          <span class="meta-pill">5 platforms</span>
-          <span class="meta-pill">EN / 中文</span>
-          <span class="meta-pill">1 free credit / day</span>
-        </div>
-      </section>
-
-      <!-- Right: the tool, in a floating glass window -->
-      <section class="showcase">
-        <div class="window">
-          <div class="window-bar">
-            <span class="traffic t-r"></span>
-            <span class="traffic t-y"></span>
-            <span class="traffic t-g"></span>
-            <span class="window-title">SocialPostAI Pro — Generate</span>
-          </div>
-
-          <main class="card">
-            <div class="plan-tag" id="planTag">Free · 1 credit/day</div>
-
-            <!-- Platform selector -->
-            <section class="block">
-              <label class="block-title">Target platforms</label>
-              <div class="chips" id="platformChips"></div>
-              <p class="hint" id="platformHint">Select one platform.</p>
-            </section>
-
-            <!-- Topic -->
-            <section class="block">
-              <label class="block-title" for="topic">Your topic</label>
-              <textarea id="topic" class="topic" rows="3" maxlength="300"
-                placeholder="e.g. Launch of our new cold-brew coffee can"></textarea>
-              <div class="topic-foot">
-                <span class="char-count"><span id="topicCount">0</span>/300</span>
-              </div>
-            </section>
-
-            <!-- Output language -->
-            <section class="block">
-              <label class="block-title">Output language</label>
-              <div class="seg" id="langSeg">
-                <button class="seg-btn active" data-lang="en">English</button>
-                <button class="seg-btn" data-lang="zh">中文</button>
-              </div>
-            </section>
-
-            <!-- Style -->
-            <section class="block">
-              <label class="block-title">Writing style</label>
-              <div class="chips" id="styleChips"></div>
-            </section>
-
-            <!-- Tone -->
-            <section class="block">
-              <label class="block-title">Tone <span class="muted" id="toneLabel">Balanced</span></label>
-              <input type="range" id="tone" class="slider" min="0" max="10" value="5" />
-            </section>
-
-            <!-- Word count -->
-            <section class="block">
-              <label class="block-title">Length <span class="muted" id="wcLabel">180 chars</span></label>
-              <input type="range" id="wordCount" class="slider" min="50" max="500" step="10" value="180" />
-            </section>
-
-            <!-- Generate -->
-            <button class="generate" id="generateBtn">Generate copy</button>
-            <p class="disclaimer">AI-generated content is for reference only. Please review manually before publishing.</p>
-
-            <!-- Turnstile disabled -->
-
-            <!-- Result -->
-            <div class="result" id="result" hidden>
-              <div class="result-head">
-                <span>Your copy</span>
-                <button class="copy-btn" id="copyBtn">Copy</button>
-              </div>
-              <div class="result-body" id="resultBody"></div>
-            </div>
-
-            <!-- Limit reached -->
-            <div class="limit-note" id="limitNote" hidden>
-              <p>You've used today's free credit. Join the waitlist to unlock unlimited generations and Pro features.</p>
-              <button class="waitlist-cta" id="waitlistFromLimit">Join the waitlist</button>
-            </div>
-          </main>
-        </div>
-      </section>
-
-    </div>
+  <!-- ===== Landing hero (centered, minimal) ===== -->
+  <main class="landing">
+    <section class="landing-hero">
+      <h1 class="landing-title">Write once.<br />Win every platform.</h1>
+      <p class="landing-sub">The AI social media copy generator that creates platform-perfect posts in seconds.</p>
+      <a class="landing-cta" href="/app.html">Start Generating for Free</a>
+    </section>
   </main>
 
-  <!-- ===== FAQ (GEO long-tail capture) ===== -->
-  <section class="faq" id="faq">
-    <h2>Frequently asked questions</h2>
-    <div class="faq-list">
-      <div class="faq-item">
-        <h3>Does SocialPostAI support multiple languages?</h3>
-        <p>Yes, it generates platform-perfect copy in both English and Chinese.</p>
-      </div>
-      <div class="faq-item">
-        <h3>What platforms does this AI social media generator support?</h3>
-        <p>It supports Instagram, TikTok, X, LinkedIn, and Facebook with native tone-tuning per network.</p>
-      </div>
-      <div class="faq-item">
-        <h3>How much does it cost?</h3>
-        <p>You get 1 free generation per day, and Pro plans are $5.99/month or $49.99/year.</p>
-      </div>
-      <div class="faq-item">
-        <h3>Is the generated social media copy ready to post?</h3>
-        <p>AI-generated drafts are tuned per platform and ready to review; always read them over before publishing.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===== Footer ===== -->
-  <footer class="footer">
+  <!-- ===== Footer (compliance only) ===== -->
+  <footer class="footer landing-footer">
     <nav class="footer-links">
-      <a href="/faq.html">FAQ</a>
       <a href="/privacy.html">Privacy Policy</a>
       <a href="/terms.html">Terms of Service</a>
-      <a href="/refund.html">Refund Policy</a>
-      <a href="/aup.html">Acceptable Use</a>
-      <a href="/contact.html">Contact</a>
     </nav>
-    <p class="footer-email">Support: <a href="mailto:support@socialpostai.app">support@socialpostai.app</a></p>
     <p class="footer-fine">© <span id="year"></span> SocialPostAI Pro. AI-generated content is for reference only. Please review manually.</p>
   </footer>
 
-  <!-- ===== Waitlist modal ===== -->
-  <div class="modal" id="waitlistModal" hidden>
-    <div class="modal-backdrop" data-close></div>
-    <div class="modal-card">
-      <button class="modal-x" data-close aria-label="Close">✕</button>
-      <h2>Join the waitlist</h2>
-      <p class="modal-sub">Payments are finishing approval. Leave your email and we'll unlock unlimited generations + Pro features the moment we go live.</p>
-      <input type="email" id="waitlistEmail" class="email-input" placeholder="you@example.com" />
-      <button class="waitlist-submit" id="waitlistSubmit">Notify me</button>
-      <p class="waitlist-status" id="waitlistStatus"></p>
-    </div>
-  </div>
-
-  <!-- ===== Pricing modal (two plans + Pro activation) ===== -->
-  <div class="modal" id="pricingModal" hidden>
-    <div class="modal-backdrop" data-close-pricing></div>
-    <div class="modal-card pricing-card">
-      <button class="modal-x" data-close-pricing aria-label="Close">✕</button>
-      <h2>SocialPostAI Pro</h2>
-      <div class="pricing-cards">
-        <div class="price-card">
-          <div class="price-card-name">Monthly</div>
-          <div class="price"><span class="price-amt">$5.99</span><span class="price-per">/ month</span></div>
-          <ul class="pricing-features">
-            <li><span class="tick">✓</span> Up to 50 generations / day</li>
-            <li><span class="tick">✓</span> All 5 platforms</li>
-            <li><span class="tick">✓</span> English &amp; 中文 output</li>
-            <li><span class="tick">✓</span> Tone / style / length control</li>
-          </ul>
-          <button class="get-pro" id="getMonthlyBtn">Get Monthly</button>
-        </div>
-        <div class="price-card best">
-          <div class="price-card-tag">Best Value · Save 30%</div>
-          <div class="price-card-name">Annual</div>
-          <div class="price"><span class="price-amt">$49.99</span><span class="price-per">/ year</span></div>
-          <ul class="pricing-features">
-            <li><span class="tick">✓</span> Up to 50 generations / day</li>
-            <li><span class="tick">✓</span> All 5 platforms</li>
-            <li><span class="tick">✓</span> English &amp; 中文 output</li>
-            <li><span class="tick">✓</span> Tone / style / length control</li>
-          </ul>
-          <button class="get-pro" id="getAnnualBtn">Get Annual</button>
-        </div>
-      </div>
-      <p class="pricing-note" id="pricingNote" hidden></p>
-      <div class="pro-activate" id="proActivate" hidden>
-        <p class="pro-activate-title">Already subscribed?</p>
-        <p class="pro-activate-sub">Enter the email you used at checkout to unlock Pro on this device.</p>
-        <input type="email" id="proEmail" class="email-input" placeholder="you@example.com" />
-        <button class="waitlist-submit" id="proActivateBtn">Activate Pro</button>
-        <p class="waitlist-status" id="proActivateStatus"></p>
-      </div>
-      <p class="pricing-activate"><a href="#" id="activateProLink">I already paid — activate Pro</a></p>
-    </div>
-  </div>
-
-  <!-- Turnstile disabled: human verification skipped. -->
+  <!-- cookie consent + year helper (self-contained) -->
   <script src="/cookie.js"></script>
-  <script src="/app.js"></script>
+  <!-- Forward Creem return params (?email= etc.) to the app page so the Pro/welcome flow fires there. -->
+  <script>
+    (function () {
+      var q = location.search;
+      if (q && q.length > 1) { location.replace('/app.html' + q); }
+    })();
+  </script>
 </body>
 </html>

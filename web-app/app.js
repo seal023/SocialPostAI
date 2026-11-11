@@ -288,11 +288,8 @@ function closePricing() { pricingModal.hidden = true; }
 pricingModal.querySelectorAll('[data-close-pricing]').forEach((el) => (el.onclick = closePricing));
 document.getElementById('navPricing').addEventListener('click', (e) => { e.preventDefault(); openPricing(); });
 document.getElementById('getProBtn').onclick = () => {
-  const note = document.getElementById('pricingNote');
-  note.hidden = false;
-  note.textContent = 'Payment is coming soon, please leave your email.';
-  closePricing();
-  openWaitlist();
+  // Real Creem checkout — send the user straight to the payment page.
+  window.location.href = 'https://www.creem.io/payment/prod_4Thpo8gm2uZlxCVAfMtwi9';
 };
 
 // Year in footer

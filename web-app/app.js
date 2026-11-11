@@ -110,6 +110,16 @@ document.getElementById('langSeg').addEventListener('click', (e) => {
   btn.classList.add('active');
 });
 
+// ---------- Auto-detect browser language (sets the DEFAULT selection only; 中文 option stays available) ----------
+(function initLanguage() {
+  const nav = (navigator.language || 'en').toLowerCase();
+  const lang = nav.startsWith('zh') ? 'zh' : 'en';
+  outputLang = lang;
+  document.querySelectorAll('#langSeg .seg-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.lang === lang);
+  });
+})();
+
 // ---------- Sliders ----------
 const toneEl = document.getElementById('tone');
 const toneLabel = document.getElementById('toneLabel');

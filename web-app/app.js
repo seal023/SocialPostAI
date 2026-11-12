@@ -7,6 +7,22 @@
 // Set this to your Worker's production URL.
 const WORKER_URL = 'https://api.socialpostai.app';
 
+// Mirror of the Worker's quota constants (FREE_DAILY / PRO_DAILY). Used only for the
+// instant optimistic counter shown before /api/usage confirms the server's real number.
+// Keep in sync with the Worker if you ever change the daily caps.
+const FRONT_FREE_DAILY = 1;
+const FRONT_PRO_DAILY = 50;
+
+// One friendly line for every upstream / AI failure. Raw stack traces, provider
+// URLs and HTTP details never reach the interface.
+const ENGINE_BUSY = 'The AI engine is busy right now. Please try again in a moment. Your credit was not used.';
+const INTERRUPTED = 'Generation was interrupted — your credit was not used. Please try again.';
+const SPAI_ERR_MARK = /\[SPAI_ERROR:[a-z_]+\]/g;
+const INTERRUPTED_KEY = 'spai_interrupted';
+function flagInterrupted() {
+  try { sessionStorage.setItem(INTERRUPTED_KEY, '1'); } catch { /* storage unavailable */ }
+}
+
 // ---------- Cloudflare Turnstile (human verification) ----------
 // Bind the SITE KEY in ONE place: app.html -> <meta name="turnstile-site-key" content="0x4...">.
 // (window.TURNSTILE_SITE_KEY also works if set before this script runs.)
@@ -88,6 +104,19 @@ function renderTurnstile() {
   const status = document.getElementById('turnstileStatus');
   if (!wrap || !host) return;
   wrap.hidden = false;
+
+  // Load the Cloudflare API only when a SITE KEY exists. During testing (empty key)
+  // this saves one cross-origin request on every page load.
+  try {
+    if (!document.querySelector('script[data-spai-turnstile]')) {
+      const s = document.createElement('script');
+      s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+      s.async = true;
+      s.defer = true;
+      s.setAttribute('data-spai-turnstile', '1');
+      (document.head || document.body).appendChild(s);
+    }
+  } catch { /* the polling fallback below still tolerates a missing script */ }
 
   let tries = 0;
   const tryRender = () => {
@@ -283,9 +312,21 @@ if (document.readyState === 'loading') {
 }
 
 // ---------- Topic ----------
+// The textarea has maxlength=300, so it cannot actually overflow. Turn the counter
+// red as the user approaches the cap (and after a long paste is truncated) instead.
+const TOPIC_MAX = 300;
+const TOPIC_WARN = 270;
 const topic = document.getElementById('topic');
 const topicCount = document.getElementById('topicCount');
-topic.oninput = () => { topicCount.textContent = topic.value.length; };
+function syncTopicCount() {
+  const n = String(topic.value || '').length;
+  topicCount.textContent = n;
+  topicCount.className = n >= TOPIC_WARN ? 'over' : '';
+  topic.setAttribute('aria-invalid', n >= TOPIC_MAX ? 'true' : 'false');
+}
+topic.oninput = syncTopicCount;
+topic.addEventListener('paste', () => { setTimeout(syncTopicCount, 0); });
+syncTopicCount();
 
 // ---------- Plan tag / limit UI ----------
 function refreshLimitUI() {
@@ -310,6 +351,63 @@ function refreshLimitUI() {
   }
   const mgr = document.getElementById('manageSubBtn');
   if (mgr) mgr.hidden = !isPro();
+  renderUsageCounter(lastUsage);
+}
+
+// ---- Daily usage counter (synced with the Worker's /api/usage) ----
+// lastUsage holds the authoritative { tier, limit, used, left } returned by the
+// Worker. renderLocalUsage() paints an instant optimistic value before the network
+// confirms it; fetchUsage() then corrects it with the server's real number.
+let lastUsage = null;
+let usageFetching = false;
+function renderUsageCounter(u) {
+  const el = document.getElementById('usageCounter');
+  if (!el) return;
+  if (!u) { el.hidden = true; return; }
+  el.hidden = false;
+  const tierEl = document.getElementById('ucTier');
+  const leftEl = document.getElementById('ucLeft');
+  const limitEl = document.getElementById('ucLimit');
+  const upgradeEl = document.getElementById('ucUpgrade');
+  if (tierEl) tierEl.textContent = u.tier === 'pro' ? 'Pro' : 'Free';
+  if (leftEl) leftEl.textContent = String(u.left);
+  if (limitEl) limitEl.textContent = '/' + u.limit;
+  if (u.left > 0) {
+    el.classList.remove('depleted');
+    if (upgradeEl) upgradeEl.hidden = true;
+  } else {
+    el.classList.add('depleted');          // 0 left -> red, and show the Upgrade link
+    if (upgradeEl) upgradeEl.hidden = false;
+  }
+}
+function renderLocalUsage() {
+  if (isPro()) {
+    lastUsage = { tier: 'pro', limit: FRONT_PRO_DAILY, used: 0, left: FRONT_PRO_DAILY };
+  } else {
+    const used = limitReached() ? FRONT_FREE_DAILY : 0;
+    lastUsage = { tier: 'free', limit: FRONT_FREE_DAILY, used, left: FRONT_FREE_DAILY - used };
+  }
+  refreshLimitUI();
+}
+async function fetchUsage() {
+  if (usageFetching) return;
+  usageFetching = true;
+  try {
+    const params = new URLSearchParams();
+    const email = getProEmail();
+    if (email) params.set('email', email);
+    params.set('uuid', getDeviceId());
+    const res = await fetch(`${WORKER_URL}/api/usage?${params.toString()}`, { method: 'GET', cache: 'no-store' });
+    if (!res.ok) return;
+    const d = await res.json().catch(() => null);
+    if (!d || !d.ok) return;
+    lastUsage = { tier: d.tier === 'pro' ? 'pro' : 'free', limit: d.limit, used: d.used, left: d.left };
+    refreshLimitUI();
+  } catch (e) {
+    // Network/Worker down: keep the optimistic local value already on screen.
+  } finally {
+    usageFetching = false;
+  }
 }
 
 // Exactly ONE upgrade prompt may be visible at any moment. The styled dark box
@@ -326,13 +424,36 @@ function showLimitNotice(message) {
   }
 }
 refreshLimitUI();
+renderLocalUsage();   // instant optimistic counter, corrected by the server below
+fetchUsage();         // GET /api/usage -> authoritative remaining quota
 renderTurnstile();
+
+// Upgrade link inside the usage counter opens Pricing (no second prompt overlaps).
+{
+  const ucUpgradeEl = document.getElementById('ucUpgrade');
+  if (ucUpgradeEl) ucUpgradeEl.onclick = (e) => { e.preventDefault(); openPricing(); };
+}
 
 // ---------- Generate ----------
 const result = document.getElementById('result');
 const resultBody = document.getElementById('resultBody');
 const generateBtn = document.getElementById('generateBtn');
 const manageSubBtn = document.getElementById('manageSubBtn');
+
+// A refresh wipes the streaming state. Surface the interruption notice once on the
+// next load so the user knows the generation stopped AND the free credit survived.
+(function restoreInterruptedNotice() {
+  let flagged = false;
+  try {
+    flagged = sessionStorage.getItem(INTERRUPTED_KEY) === '1';
+    if (flagged) sessionStorage.removeItem(INTERRUPTED_KEY);
+  } catch { /* private mode / storage blocked */ }
+  if (!flagged) return;
+  result.hidden = false;
+  resultBody.innerHTML =
+    '<p class="pl-name">Content</p>' +
+    `<p style="color:#f87171;font-weight:700;margin:0;">${INTERRUPTED}</p>`;
+})();
 
 generateBtn.onclick = async () => {
   if (limitReached()) { openLimitModal(); return; }
@@ -368,7 +489,7 @@ generateBtn.onclick = async () => {
 
     // Rate-limited: Worker returns a JSON 429 — show the message, don't try to stream.
     if (res.status === 429) {
-      let msg = 'Daily free limit reached. Please upgrade to Pro.';
+      let msg = 'Free limit reached. Note: the free tier allows only one generation per network per day. Upgrade to Pro for full access on all your devices.';
       let code = '';
       try {
         const e = await res.json();
@@ -425,13 +546,14 @@ generateBtn.onclick = async () => {
     const completed = await streamIntoResult(res, selectedPlatform);
     if (completed && !isPro()) markUsed();
     refreshLimitUI();
+    fetchUsage(); // re-sync the counter with the server's post-generation quota
     // Free users solve once per generation; Pro keeps a valid (auto-refreshed) token.
     if (!isPro() && window.turnstile && turnstileWidgetId !== null) { try { window.turnstile.reset(); } catch {} cfToken = ''; }
   } catch (err) {
+    // Network drop / non-streaming HTTP error: one calm line, never raw error text.
+    flagInterrupted();
     result.hidden = false;
-    resultBody.innerHTML =
-      '<p style="color:#f87171;font-weight:700;margin:0 0 8px;">Generation failed.</p>' +
-      `<p style="color:#a1a1aa;font-size:13px;white-space:pre-wrap;word-break:break-word;line-height:1.5;margin:0;">${escapeHtml(String((err && err.message) || err))}</p>`;
+    resultBody.innerHTML = `<p style="color:#f87171;font-weight:700;margin:0;">${ENGINE_BUSY}</p>`;
   } finally {
     if (!limitReached()) {
       generateBtn.disabled = false;
@@ -475,15 +597,17 @@ async function streamIntoResult(res, platform) {
     }
     reader = res.body.getReader();
   } catch (e) {
+    flagInterrupted();
     resultBody.innerHTML =
       `<p class="pl-name">${outName}</p>` +
-      `<p style="color:#f87171;font-weight:700;margin:0;">${escapeHtml(String((e && e.message) || e))}</p>`;
+      `<p style="color:#f87171;font-weight:700;margin:0;">${INTERRUPTED}</p>`;
     return false;
   }
 
   const decoder = new TextDecoder();
   let full = '';
   let completed = false;
+  let engineFailed = false;
   result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   try {
     while (true) {
@@ -495,15 +619,26 @@ async function streamIntoResult(res, platform) {
     full += decoder.decode(); // flush any trailing partial UTF-8 sequence
   } catch (e) {
     completed = false;
+    flagInterrupted();
     // Tell the edge we are done reading: its stream cancel() skips the quota charge.
     try { const p = reader.cancel(); if (p && p.catch) p.catch(() => {}); } catch {}
     try { full += decoder.decode(); } catch {}
   }
+
+  // The Worker appends [SPAI_ERROR:...] when the AI provider fails. Strip the
+  // marker, show one friendly line, and never count this as a delivered result.
+  if (full.includes('[SPAI_ERROR:')) {
+    engineFailed = true;
+    completed = false;
+    full = full.replace(SPAI_ERR_MARK, '').trim();
+  }
+
+  const notice = engineFailed
+    ? `<p style="color:#f87171;font-weight:700;margin:12px 0 0;">${ENGINE_BUSY}</p>`
+    : (completed ? '' : `<p style="color:#f87171;font-weight:700;margin:12px 0 0;">${INTERRUPTED}</p>`);
   resultBody.innerHTML =
-    `<p class="pl-name">${outName}</p>${highlightTags(escapeHtml(full), platform)}` +
-    (completed ? '' :
-      '<p style="color:#f87171;font-weight:700;margin:12px 0 0;">Generation was interrupted — your credit was not used. Please try again.</p>');
-  return completed;
+    `<p class="pl-name">${outName}</p>${highlightTags(escapeHtml(full), platform)}` + notice;
+  return completed && !engineFailed;
 }
 function escapeHtml(s) {
   return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -560,6 +695,7 @@ proActivateBtn.onclick = async () => {
       proActivateStatus.className = 'waitlist-status ok';
       proActivateStatus.textContent = 'Pro activated on this device — generations now use your Pro quota.';
       refreshLimitUI();
+      fetchUsage();
       setTimeout(closePricing, 1600);
     } else {
       proActivateStatus.className = 'waitlist-status err';
@@ -647,6 +783,7 @@ limitUnlockBtn.onclick = async () => {
       limitUnlockStatus.className = 'waitlist-status ok';
       limitUnlockStatus.textContent = 'Pro unlocked! Your generations now use the Pro quota.';
       refreshLimitUI();
+      fetchUsage();
       setTimeout(closeLimitModal, 1600);
     } else {
       limitUnlockStatus.className = 'waitlist-status err';
@@ -683,6 +820,7 @@ async function claimCheckout(checkoutId, rawQuery) {
         if (identity) {
           localStorage.setItem('spai_pro_email', identity);
           refreshLimitUI();
+          fetchUsage();
           const line = document.getElementById('welcomeEmail');
           if (line && d.email) {
             line.textContent = `Your access is linked to ${d.email}. Please keep this email safe to log in on other devices.`;
@@ -702,6 +840,7 @@ async function claimCheckout(checkoutId, rawQuery) {
   // Pro was already granted at the top of this file. Refresh the badge and show the
   // success dialog — never the Pricing modal, never an email prompt.
   refreshLimitUI();
+  fetchUsage();
   const text = document.getElementById('welcomeText');
   if (text) text.textContent = 'Congratulations! Your payment was successful. You now have up to 50 generations per day.';
   const line = document.getElementById('welcomeEmail');
@@ -732,6 +871,18 @@ if (welcomeAnnualLink) welcomeAnnualLink.onclick = (e) => { e.preventDefault(); 
 // Landing "Pricing" link arrives as /app.html#pricing — open the pricing modal here.
 // A payment-success return always wins: never show Pricing on top of the welcome dialog.
 if (location.hash === '#pricing' && (!welcomeModal || welcomeModal.hidden)) { openPricing(); }
+
+// Soft keyboard on iOS Safari / Android Chrome can cover the field being edited.
+// Once the keyboard has settled, bring the focused input into the visible area.
+['topic', 'proEmail', 'limitEmail'].forEach((id) => {
+  const el = document.getElementById(id);
+  if (!el || !el.addEventListener) return;
+  el.addEventListener('focus', () => {
+    setTimeout(() => {
+      try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch { /* unsupported */ }
+    }, 300);
+  });
+});
 
 // Year in footer
 const yearEl = document.getElementById('year');

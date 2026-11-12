@@ -132,7 +132,7 @@ function turnstileBlocking() {
 const PLATFORMS = [
   { id: 'instagram', name: 'Instagram', emoji: '📸', hint: 'Visual hooks, 15–30 hashtags' },
   { id: 'tiktok', name: 'TikTok', emoji: '🎵', hint: '[Hook] + [Script] video plan' },
-  { id: 'x', name: 'X', emoji: '𝕏', hint: 'Punchy, ≤280 chars' },
+  { id: 'x', name: 'X', emoji: '𝕏', hint: 'Punchy, under 280' },
   { id: 'linkedin', name: 'LinkedIn', emoji: '💼', hint: 'Professional, structured' },
   { id: 'facebook', name: 'Facebook', emoji: '👍', hint: 'Conversational, CTA' },
 ];

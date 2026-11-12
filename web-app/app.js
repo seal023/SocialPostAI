@@ -311,6 +311,20 @@ function refreshLimitUI() {
   const mgr = document.getElementById('manageSubBtn');
   if (mgr) mgr.hidden = !isPro();
 }
+
+// Exactly ONE upgrade prompt may be visible at any moment. The styled dark box
+// (#limitNote at the bottom of the card) owns it. The result area is reserved
+// for generated copy and short status messages — never a second upgrade CTA.
+function showLimitNotice(message) {
+  const resultBox = document.getElementById('result');
+  const note = document.getElementById('limitNote');
+  if (resultBox) resultBox.hidden = true;
+  if (note) {
+    const p = note.querySelector('p');
+    if (p && message) p.textContent = message;
+    note.hidden = false;
+  }
+}
 refreshLimitUI();
 renderTurnstile();
 
@@ -371,15 +385,20 @@ generateBtn.onclick = async () => {
           '<p style="color:#f87171;font-weight:700;margin:0;">Your Pro access is still syncing. Please wait a few seconds and try again.</p>';
         return;
       }
-      markUsed();
+      // Only a genuine daily free-quota exhaustion consumes the local free credit.
+      // A 5/min burst guard, a Pro daily cap or a global capacity cap must not burn it.
+      if (!isPro() && code === 'free_quota_used') markUsed();
       refreshLimitUI();
-      result.hidden = false;
-      resultBody.innerHTML =
-        `<p style="color:#f87171;font-weight:700;margin:0 0 8px;">${escapeHtml(msg)}</p>` +
-        '<p style="color:#a1a1aa;font-size:14px;margin:0 0 12px;">Upgrade to Pro for up to 50 generations per day.</p>' +
-        '<button class="get-pro" id="inlineUpgradeBtn" style="max-width:240px;">Upgrade to Pro</button>';
-      const ib = document.getElementById('inlineUpgradeBtn');
-      if (ib) ib.onclick = () => { window.location.href = CREEM_LINKS.monthly; };
+
+      // Upgrade situations show the single dark box. Other 429s (too many requests,
+      // Pro cap reached, global capacity) are NOT upgrade situations: one short
+      // status line in the result area, no CTA and no dark box.
+      if (code === 'free_quota_used' || code === '') {
+        showLimitNotice(msg);
+      } else {
+        result.hidden = false;
+        resultBody.innerHTML = `<p style="color:#f87171;font-weight:700;margin:0;">${escapeHtml(msg)}</p>`;
+      }
       return;
     }
 
@@ -587,8 +606,18 @@ if (manageSubBtn) {
 
 // ---------- Limit reached modal (upgrade + Pro recovery) ----------
 const limitModal = document.getElementById('limitModal');
-function openLimitModal() { limitModal.hidden = false; const e = document.getElementById('limitEmail'); if (e) e.focus(); }
-function closeLimitModal() { limitModal.hidden = true; }
+function openLimitModal() {
+  // The modal replaces the dark box instead of stacking a second prompt on top.
+  const note = document.getElementById('limitNote');
+  if (note) note.hidden = true;
+  limitModal.hidden = false;
+  const e = document.getElementById('limitEmail');
+  if (e) e.focus();
+}
+function closeLimitModal() {
+  limitModal.hidden = true;
+  refreshLimitUI(); // restore the single card notice if the free credit is still used up
+}
 limitModal.querySelectorAll('[data-close-limit]').forEach((el) => (el.onclick = closeLimitModal));
 document.getElementById('waitlistFromLimit').onclick = openLimitModal; // card's "Upgrade to Pro" link
 document.getElementById('limitUpgradeBtn').onclick = () => { window.location.href = CREEM_LINKS.monthly; };

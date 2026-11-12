@@ -7,10 +7,17 @@
 // Set this to your Worker's production URL.
 const WORKER_URL = 'https://api.socialpostai.app';
 
-// Paste your Cloudflare Turnstile SITE KEY here to enable human verification.
-// Leave as '' to keep it disabled (dev). The Worker only enforces it once TURNSTILE_SECRET is set on its side.
-const TURNSTILE_SITE_KEY = '';
+// ---------- Cloudflare Turnstile (human verification) ----------
+// Bind the SITE KEY in ONE place: app.html -> <meta name="turnstile-site-key" content="0x4...">.
+// (window.TURNSTILE_SITE_KEY also works if set before this script runs.)
+// Empty = no widget, no client-side blocking, and the Worker currently bypasses
+// verification too. Paste the key tomorrow and uncomment the Worker gate together.
+const TURNSTILE_SITE_KEY = String(
+  window.TURNSTILE_SITE_KEY ||
+  (document.querySelector('meta[name="turnstile-site-key"]') || {}).content || ''
+).trim();
 let cfToken = '';
+let turnstileWidgetId = null;
 
 // ---------- Device fingerprint (for rate limiting) ----------
 function getDeviceId() {
@@ -71,26 +78,54 @@ function getCheckoutId() {
 }
 
 // Render the Turnstile widget once the Cloudflare script is ready.
-// Only shows when TURNSTILE_SITE_KEY is set; the Worker enforces the token.
+// - No SITE KEY  -> nothing shown, nothing blocked (current testing mode).
+// - Key present  -> unhide #turnstileWrap, wait up to ~10s for the API, render ONCE.
+// A missing/broken widget must never dead-end the user in a captcha wall.
 function renderTurnstile() {
   if (!TURNSTILE_SITE_KEY) return;
   const wrap = document.getElementById('turnstileWrap');
-  if (wrap) wrap.hidden = false;
+  const host = document.getElementById('turnstileWidget');
+  const status = document.getElementById('turnstileStatus');
+  if (!wrap || !host) return;
+  wrap.hidden = false;
+
+  let tries = 0;
   const tryRender = () => {
-    if (window.turnstile) {
-      window.turnstile.render('#turnstileWidget', {
+    if (turnstileWidgetId !== null) return; // already rendered — never double-render
+    if (!window.turnstile || typeof window.turnstile.render !== 'function') {
+      if (++tries > 50) {
+        if (status) {
+          status.hidden = false;
+          status.textContent = 'Human verification is unavailable right now. You can still generate.';
+        }
+        return;
+      }
+      setTimeout(tryRender, 200);
+      return;
+    }
+    try {
+      turnstileWidgetId = window.turnstile.render(host, {
         sitekey: TURNSTILE_SITE_KEY,
         appearance: 'interaction-only',
         theme: 'dark',
-        callback: (t) => { cfToken = t; },
+        callback: (t) => { cfToken = t || ''; },
         'expired-callback': () => { cfToken = ''; },
         'error-callback': () => { cfToken = ''; },
       });
-    } else {
-      setTimeout(tryRender, 200);
+    } catch (e) {
+      if (status) {
+        status.hidden = false;
+        status.textContent = 'Human verification could not load. You can still generate.';
+      }
     }
   };
   tryRender();
+}
+
+// Only block a generation when a widget was actually rendered and is unsolved.
+// With an empty SITE KEY (or a failed widget) this is always false.
+function turnstileBlocking() {
+  return !!(TURNSTILE_SITE_KEY && turnstileWidgetId !== null && !cfToken);
 }
 
 // ---------- Platform list ----------
@@ -196,16 +231,56 @@ document.getElementById('langSeg').addEventListener('click', (e) => {
   });
 })();
 
-// ---------- Sliders ----------
+// ---------- Sliders: live labels + guaranteed values on every request ----------
+// 11 labels map 1:1 to the Tone slider's 0..10 values (left = formal, right = casual).
+const TONE_MIN = 0, TONE_MAX = 10;
+const LEN_MIN = 50, LEN_MAX = 500, LEN_STEP = 10;
+
 const toneEl = document.getElementById('tone');
 const toneLabel = document.getElementById('toneLabel');
-toneEl.oninput = () => { tone = +toneEl.value; toneLabel.textContent = TONE_WORDS[tone]; };
-toneLabel.textContent = TONE_WORDS[tone];
-
 const wcEl = document.getElementById('wordCount');
 const wcLabel = document.getElementById('wcLabel');
-wcEl.oninput = () => { wordCount = +wcEl.value; wcLabel.textContent = `${wordCount} chars`; };
-wcLabel.textContent = `${wordCount} chars`;
+
+function clampInt(value, min, max, fallback) {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+}
+function toneWordAt(value) {
+  const i = clampInt(value, TONE_MIN, TONE_MAX, 5) - TONE_MIN;
+  return TONE_WORDS[i] || 'Balanced';
+}
+// Always read the ACTUAL slider DOM value, so the label and the JSON body can never drift.
+function readTone() {
+  return toneEl && toneEl.value !== undefined
+    ? clampInt(toneEl.value, TONE_MIN, TONE_MAX, tone) : tone;
+}
+function readLength() {
+  return wcEl && wcEl.value !== undefined
+    ? clampInt(wcEl.value, LEN_MIN, LEN_MAX, wordCount) : wordCount;
+}
+function syncSliderLabels() {
+  tone = readTone();
+  wordCount = readLength();
+  if (toneLabel) toneLabel.textContent = toneWordAt(tone);
+  if (wcLabel) wcLabel.textContent = `${wordCount} chars`;
+  if (toneEl) toneEl.setAttribute('aria-valuetext', toneWordAt(tone));
+  if (wcEl) wcEl.setAttribute('aria-valuetext', `${wordCount} characters`);
+}
+function bindSliders() {
+  const onMove = () => syncSliderLabels();
+  [toneEl, wcEl].forEach((el) => {
+    if (!el || el.dataset.spaiBound === '1') return;
+    el.dataset.spaiBound = '1';
+    el.addEventListener('input', onMove);
+    el.addEventListener('change', onMove);
+  });
+  syncSliderLabels();
+}
+bindSliders();
+// Safety net: if this script ever runs before the DOM is parsed, re-bind once it is.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bindSliders, { once: true });
+}
 
 // ---------- Topic ----------
 const topic = document.getElementById('topic');
@@ -249,7 +324,8 @@ generateBtn.onclick = async () => {
   if (limitReached()) { openLimitModal(); return; }
   if (!topic.value.trim()) { alert('Please enter a topic first.'); return; }
   if (!selectedPlatform) { alert('Please select a platform.'); return; }
-  if (TURNSTILE_SITE_KEY && !cfToken) { alert('Please complete the human verification first.'); return; }
+  if (turnstileBlocking()) { alert('Please complete the human verification first.'); return; }
+  syncSliderLabels(); // snap the labels and the outgoing values together
 
   generateBtn.disabled = true;
   generateBtn.textContent = 'Generating…';
@@ -265,8 +341,9 @@ generateBtn.onclick = async () => {
         checkoutId: getCheckoutId(),
         platforms: [selectedPlatform],
         style: selectedStyle,
-        tone,
-        wordCount,
+        tone: readTone(),
+        toneWord: toneWordAt(readTone()),
+        wordCount: readLength(),
         topic: topic.value.trim(),
         outputLanguage: outputLang,
         cfToken,
@@ -312,7 +389,7 @@ generateBtn.onclick = async () => {
       try { const e = await res.json(); if (e && e.message) msg = e.message; } catch {}
       result.hidden = false;
       resultBody.innerHTML = `<p style="color:#f87171;font-weight:700;margin:0;">${escapeHtml(msg)}</p>`;
-      if (window.turnstile && TURNSTILE_SITE_KEY) { try { window.turnstile.reset(); } catch {} cfToken = ''; }
+      if (window.turnstile && turnstileWidgetId !== null) { try { window.turnstile.reset(); } catch {} cfToken = ''; }
       return;
     }
 
@@ -328,7 +405,7 @@ generateBtn.onclick = async () => {
     if (!isPro()) markUsed();
     refreshLimitUI();
     // Free users solve once per generation; Pro keeps a valid (auto-refreshed) token.
-    if (!isPro() && window.turnstile && TURNSTILE_SITE_KEY) { try { window.turnstile.reset(); } catch {} cfToken = ''; }
+    if (!isPro() && window.turnstile && turnstileWidgetId !== null) { try { window.turnstile.reset(); } catch {} cfToken = ''; }
   } catch (err) {
     result.hidden = false;
     resultBody.innerHTML =
@@ -347,7 +424,7 @@ generateBtn.onclick = async () => {
 // Chinese UI strings; they only ever match text produced by the AI, never interface copy.
 function highlightTags(escapedHtml, platform) {
   if (platform !== 'tiktok') return escapedHtml;
-  return escapedHtml.replace(/$$(Visual|Voiceover|\u753b\u9762|\u53e3\u64ad)$$/g, '<span class="tag-hl">$&</span>');
+  return escapedHtml.replace(/\[(Visual|Voiceover|\u753b\u9762|\u53e3\u64ad)\]/g, '<span class="tag-hl">$&</span>');
 }
 function renderResult(text) {
   result.hidden = false;
@@ -600,4 +677,19 @@ if (welcomeAnnualLink) welcomeAnnualLink.onclick = (e) => { e.preventDefault(); 
 if (location.hash === '#pricing' && (!welcomeModal || welcomeModal.hidden)) { openPricing(); }
 
 // Year in footer
-document.getElementById('year').textContent = new Date().getFullYear();
+const yearEl = document.getElementById('year');
+if (yearEl) yearEl.textContent = new Date().getFullYear();
+
+// DevTools check: type spaiSettings() in the console to confirm both sliders
+// are live and that the exact values below are what the Worker receives.
+window.spaiSettings = () => ({
+  platform: selectedPlatform,
+  style: selectedStyle,
+  tone: readTone(),
+  toneWord: toneWordAt(readTone()),
+  wordCount: readLength(),
+  outputLanguage: outputLang,
+  pro: isPro(),
+  turnstileEnabled: !!TURNSTILE_SITE_KEY,
+  turnstileRendered: turnstileWidgetId !== null,
+});

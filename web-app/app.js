@@ -265,7 +265,7 @@ function syncSliderLabels() {
   if (wcLabel) wcLabel.textContent = `${wordCount}`;
   if (toneEl) toneEl.setAttribute('aria-valuetext', toneWordAt(tone));
   if (wcEl) wcEl.setAttribute('aria-valuetext', `${wordCount}`);
-  }
+}
 function bindSliders() {
   const onMove = () => syncSliderLabels();
   [toneEl, wcEl].forEach((el) => {
@@ -401,8 +401,10 @@ generateBtn.onclick = async () => {
     }
 
     // Streaming: reveal the card instantly, then append text as tokens arrive.
-    await streamIntoResult(res, selectedPlatform);
-    if (!isPro()) markUsed();
+    // A daily credit is consumed ONLY when streamIntoResult() confirms the stream
+    // reached done:true. A refresh / abort / network drop must never cost the user.
+    const completed = await streamIntoResult(res, selectedPlatform);
+    if (completed && !isPro()) markUsed();
     refreshLimitUI();
     // Free users solve once per generation; Pro keeps a valid (auto-refreshed) token.
     if (!isPro() && window.turnstile && turnstileWidgetId !== null) { try { window.turnstile.reset(); } catch {} cfToken = ''; }
@@ -435,28 +437,54 @@ function renderResult(text) {
 // Stream the Worker's text/plain response into the result card, token by token.
 // The card opens the instant the first byte arrives; a caret blinks while streaming;
 // when the stream ends we do a final escape + TikTok [Visual]/[Voiceover] highlight pass.
+//
+// Returns true ONLY when reader.read() reported done:true with no exception.
+// Any abort (page refresh, tab close, manual stop, network drop, upstream error)
+// returns false, so the caller never burns a daily credit on a result the user
+// never received. We also cancel the reader so the Worker drops the stream too.
 async function streamIntoResult(res, platform) {
   result.hidden = false;
   const outName = PLATFORM_OUTPUT[platform] || 'Content';
   resultBody.innerHTML =
     `<p class="pl-name">${outName}</p><span class="stream-text"></span><span class="stream-cursor" aria-hidden="true"></span>`;
   const textSpan = resultBody.querySelector('.stream-text');
-  const reader = res.body.getReader();
+
+  let reader;
+  try {
+    if (!res.body || typeof res.body.getReader !== 'function') {
+      throw new Error('Streaming is not supported by this browser.');
+    }
+    reader = res.body.getReader();
+  } catch (e) {
+    resultBody.innerHTML =
+      `<p class="pl-name">${outName}</p>` +
+      `<p style="color:#f87171;font-weight:700;margin:0;">${escapeHtml(String((e && e.message) || e))}</p>`;
+    return false;
+  }
+
   const decoder = new TextDecoder();
   let full = '';
+  let completed = false;
   result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) { completed = true; break; }
       full += decoder.decode(value, { stream: true });
-      textSpan.textContent = full;
+      if (textSpan) textSpan.textContent = full;
     }
+    full += decoder.decode(); // flush any trailing partial UTF-8 sequence
   } catch (e) {
-    full += '\n[stream interrupted]';
+    completed = false;
+    // Tell the edge we are done reading: its stream cancel() skips the quota charge.
+    try { const p = reader.cancel(); if (p && p.catch) p.catch(() => {}); } catch {}
+    try { full += decoder.decode(); } catch {}
   }
-  full += decoder.decode();
-  resultBody.innerHTML = `<p class="pl-name">${outName}</p>${highlightTags(escapeHtml(full), platform)}`;
+  resultBody.innerHTML =
+    `<p class="pl-name">${outName}</p>${highlightTags(escapeHtml(full), platform)}` +
+    (completed ? '' :
+      '<p style="color:#f87171;font-weight:700;margin:12px 0 0;">Generation was interrupted — your credit was not used. Please try again.</p>');
+  return completed;
 }
 function escapeHtml(s) {
   return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));

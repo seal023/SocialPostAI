@@ -12,7 +12,7 @@
 
   <!-- Cloudflare Turnstile SITE KEY. Leave empty during testing (widget hidden, Worker bypassed).
        Tomorrow: paste your site key here AND re-enable the Worker gate together. -->
-  <meta name="turnstile-site-key" content="0x4AAAAAAF8wcf4f27sns8_c" />
+  <meta name="turnstile-site-key" content="" />
 
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
@@ -185,9 +185,19 @@
 
             <!-- Length: live char count is rendered by app.js into #wcLabel and sent to the Worker. -->
             <section class="block">
-            <label class="block-title" for="wordCount">Length <span class="muted" id="wcLabel">180</span></label>
-            <input type="range" id="wordCount" class="slider" min="50" max="500" step="10" value="180" />
-            <div style="display:flex;justify-content:space-between;margin-top:1px;font-size:11px;line-height:1.4;color:#71717a;" aria-hidden="true"><span>50</span><span>500</span></div>
+              <label class="block-title" for="wordCount">Length <span class="muted" id="wcLabel">180</span></label>
+              <input type="range" id="wordCount" class="slider" min="50" max="500" step="10" value="180" />
+              <div style="display:flex;justify-content:space-between;margin-top:1px;font-size:11px;line-height:1.4;color:#71717a;" aria-hidden="true"><span>50</span><span>500</span></div>
+            </section>
+
+            <!-- Daily usage counter (synced with the Worker's KV quota via /api/usage) -->
+            <div class="usage-counter" id="usageCounter" hidden>
+              <span class="uc-tier" id="ucTier">Free</span>
+              <span class="uc-num" id="ucLeft">1</span><span class="uc-limit" id="ucLimit">/1</span>
+              <span class="uc-tail">left today</span>
+              <a href="#" class="uc-upgrade" id="ucUpgrade" hidden>· Upgrade to Pro</a>
+            </div>
+
             <!-- Generate -->
             <button class="generate" id="generateBtn">Generate copy</button>
             <!-- Turnstile widget host. app.js unhides this only when a SITE KEY is bound. -->
@@ -327,8 +337,7 @@
     </div>
   </div>
 
-  <!-- Turnstile API. The widget only renders when the site-key meta tag above is filled in. -->
-  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  <!-- The Turnstile API is injected by app.js ONLY when a SITE KEY is configured. -->
   <script src="/cookie.js"></script>
   <script src="/app.js"></script>
 </body>

@@ -185,11 +185,9 @@
 
             <!-- Length: live char count is rendered by app.js into #wcLabel and sent to the Worker. -->
             <section class="block">
-              <label class="block-title" for="wordCount">Length <span class="muted" id="wcLabel">180 chars</span></label>
-              <input type="range" id="wordCount" class="slider" min="50" max="500" step="10" value="180" />
-              <div style="display:flex;justify-content:space-between;margin-top:1px;font-size:11px;line-height:1.4;color:#71717a;" aria-hidden="true"><span>50 chars</span><span>500 chars</span></div>
-            </section>
-
+            <label class="block-title" for="wordCount">Length <span class="muted" id="wcLabel">180</span></label>
+            <input type="range" id="wordCount" class="slider" min="50" max="500" step="10" value="180" />
+            <div style="display:flex;justify-content:space-between;margin-top:1px;font-size:11px;line-height:1.4;color:#71717a;" aria-hidden="true"><span>50</span><span>500</span></div>
             <!-- Generate -->
             <button class="generate" id="generateBtn">Generate copy</button>
             <!-- Turnstile widget host. app.js unhides this only when a SITE KEY is bound. -->

@@ -10,6 +10,10 @@
   <meta name="robots" content="noindex, follow, max-image-preview:large" />
   <link rel="canonical" href="https://socialpostai.app/app.html" />
 
+  <!-- Cloudflare Turnstile SITE KEY. Leave empty during testing (widget hidden, Worker bypassed).
+       Tomorrow: paste your site key here AND re-enable the Worker gate together. -->
+  <meta name="turnstile-site-key" content="" />
+
   <!-- Open Graph -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="SocialPostAI — AI Social Media Post Generator" />
@@ -172,26 +176,28 @@
               <div class="chips" id="styleChips"></div>
             </section>
 
-            <!-- Tone -->
+            <!-- Tone: 0 = formal, 10 = casual. The live word is rendered by app.js into #toneLabel. -->
             <section class="block">
-              <label class="block-title">Tone <span class="muted" id="toneLabel">Balanced</span></label>
-              <input type="range" id="tone" class="slider" min="0" max="10" value="5" />
+              <label class="block-title" for="tone">Tone <span class="muted" id="toneLabel">Balanced</span></label>
+              <input type="range" id="tone" class="slider" min="0" max="10" step="1" value="5" />
+              <div style="display:flex;justify-content:space-between;margin-top:1px;font-size:11px;line-height:1.4;color:#71717a;" aria-hidden="true"><span>Formal</span><span>Balanced</span><span>Casual</span></div>
             </section>
 
-            <!-- Word count -->
+            <!-- Length: live char count is rendered by app.js into #wcLabel and sent to the Worker. -->
             <section class="block">
-              <label class="block-title">Length <span class="muted" id="wcLabel">180 chars</span></label>
+              <label class="block-title" for="wordCount">Length <span class="muted" id="wcLabel">180 chars</span></label>
               <input type="range" id="wordCount" class="slider" min="50" max="500" step="10" value="180" />
+              <div style="display:flex;justify-content:space-between;margin-top:1px;font-size:11px;line-height:1.4;color:#71717a;" aria-hidden="true"><span>50 chars</span><span>500 chars</span></div>
             </section>
 
             <!-- Generate -->
             <button class="generate" id="generateBtn">Generate copy</button>
+            <!-- Turnstile widget host. app.js unhides this only when a SITE KEY is bound. -->
             <div class="turnstile-wrap" id="turnstileWrap" hidden>
               <div id="turnstileWidget"></div>
             </div>
+            <p class="hint" id="turnstileStatus" hidden></p>
             <p class="disclaimer">AI-generated content is for reference only. Please review manually before publishing.</p>
-
-            <!-- Turnstile disabled -->
 
             <!-- Result -->
             <div class="result" id="result" hidden>
@@ -323,7 +329,7 @@
     </div>
   </div>
 
-  <!-- Turnstile (human verification). Widget only renders if TURNSTILE_SITE_KEY is set in app.js. -->
+  <!-- Turnstile API. The widget only renders when the site-key meta tag above is filled in. -->
   <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
   <script src="/cookie.js"></script>
   <script src="/app.js"></script>

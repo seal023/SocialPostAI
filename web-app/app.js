@@ -262,10 +262,10 @@ function syncSliderLabels() {
   tone = readTone();
   wordCount = readLength();
   if (toneLabel) toneLabel.textContent = toneWordAt(tone);
-  if (wcLabel) wcLabel.textContent = `${wordCount} chars`;
+  if (wcLabel) wcLabel.textContent = `${wordCount}`;
   if (toneEl) toneEl.setAttribute('aria-valuetext', toneWordAt(tone));
-  if (wcEl) wcEl.setAttribute('aria-valuetext', `${wordCount} characters`);
-}
+  if (wcEl) wcEl.setAttribute('aria-valuetext', `${wordCount}`);
+  }
 function bindSliders() {
   const onMove = () => syncSliderLabels();
   [toneEl, wcEl].forEach((el) => {

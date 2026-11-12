@@ -329,6 +329,8 @@ html, body {
 }
 .topic-foot { display: flex; justify-content: flex-end; margin-top: 6px; }
 .char-count { font-size: 12px; color: var(--muted); }
+/* Turns red as the topic approaches the 300-character cap (maxlength truncates it). */
+#topicCount.over { color: #f87171; font-weight: 700; }
 
 /* Segmented */
 .seg { display: flex; gap: 8px; }
@@ -368,6 +370,30 @@ html, body {
 .generate:active { transform: translateY(0); }
 .generate:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 .disclaimer { text-align: center; font-size: 11.5px; color: var(--muted); margin: 12px 0 0; line-height: 1.4; }
+
+/* ===== Daily usage counter (synced with the Worker's KV quota) ===== */
+/* Sits right above the Generate button: an at-a-glance "X/limit left today".
+   Green when credits remain, red when depleted (0 left), with a direct Upgrade link. */
+.usage-counter {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  font-size: 13.5px; font-weight: 700; color: #e4e4e7;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 11px 14px; margin-bottom: 14px;
+}
+.usage-counter .uc-tier {
+  color: var(--primary-d); font-weight: 800; font-size: 12px;
+  background: var(--accent-soft); border: 1px solid rgba(129,140,248,0.35);
+  padding: 2px 9px; border-radius: 999px; white-space: nowrap;
+}
+.usage-counter .uc-num { color: #34d399; font-size: 16px; font-weight: 900; min-width: 14px; text-align: center; }
+.usage-counter .uc-limit { color: var(--muted); }
+.usage-counter .uc-tail { color: var(--sub); font-weight: 600; }
+.usage-counter .uc-upgrade { color: var(--primary-d); text-decoration: none; margin-left: 2px; font-weight: 800; }
+.usage-counter .uc-upgrade:hover { text-decoration: underline; }
+.usage-counter.depleted { border-color: rgba(248,113,113,0.5); background: rgba(248,113,113,0.08); }
+.usage-counter.depleted .uc-num { color: #f87171; }
+.usage-counter.depleted .uc-tier { color: #fca5a5; background: rgba(248,113,113,0.12); border-color: rgba(248,113,113,0.45); }
+.usage-counter.depleted .uc-tail { color: #fca5a5; }
 
 /* Result */
 .result { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 16px; }
@@ -692,6 +718,9 @@ html, body {
 
 /* ===== Responsive ===== */
 @media (max-width: 960px) {
+  /* Three infinite blurred gradients are the main GPU cost on phones/tablets.
+     Keep the static background, drop the continuous compositing work. */
+  .blob { animation: none; }
   .hero { padding: calc(var(--nav-h) + 44px) 18px 30px; }
   .hero-grid { grid-template-columns: 1fr; gap: 34px; }
   .hero-copy { max-width: 100%; text-align: center; }

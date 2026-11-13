@@ -784,9 +784,60 @@ proActivateBtn.onclick = async () => {
   }
 };
 
-// ---------- Login button -> open Pricing (no real account system; Pro is email-based) ----------
+// ---------- Login button -> Restore Pro Access modal (no real account system; Pro is email-based) ----------
+// Users who bought Pro on another device / cleared cache can self-recover by entering
+// the checkout email. The Worker verifies against the Creem-backed `pro:<email>` KV record.
 const navLogin = document.getElementById('navLogin');
-if (navLogin) navLogin.addEventListener('click', (e) => { e.preventDefault(); openPricing(); });
+const restoreModal = document.getElementById('restoreModal');
+const restoreEmailInput = document.getElementById('restoreEmail');
+const restoreBtn = document.getElementById('restoreBtn');
+const restoreStatus = document.getElementById('restoreStatus');
+
+function openRestore() {
+  if (restoreStatus) { restoreStatus.className = 'waitlist-status'; restoreStatus.textContent = ''; }
+  if (restoreModal) restoreModal.hidden = false;
+  if (restoreEmailInput) restoreEmailInput.focus();
+}
+function closeRestore() { if (restoreModal) restoreModal.hidden = true; }
+if (restoreModal) restoreModal.querySelectorAll('[data-close-restore]').forEach((el) => (el.onclick = closeRestore));
+
+function verifyAndUnlock(email, statusEl, { onSuccess } = {}) {
+  return new Promise((resolve) => {
+    const setStatus = (cls, msg) => { if (statusEl) { statusEl.className = 'waitlist-status' + (cls ? ' ' + cls : ''); statusEl.textContent = msg; } };
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setStatus('err', 'Please enter a valid email.'); return resolve(false); }
+    setStatus('', 'Verifying…');
+    fetch(`${WORKER_URL}/api/verify-pro`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+      .then((r) => r.json().catch(() => ({})))
+      .then((data) => {
+        if (data && data.pro) {
+          try { localStorage.setItem('spai_pro_email', email); } catch { /* storage blocked */ }
+          setStatus('ok', 'Pro access restored on this device — your generations now use the Pro quota.');
+          refreshLimitUI();
+          fetchUsage();
+          if (typeof onSuccess === 'function') onSuccess();
+          resolve(true);
+        } else {
+          setStatus('err', 'No active subscription found for this email.');
+          resolve(false);
+        }
+      })
+      .catch(() => { setStatus('err', 'Verification failed (network). Please try again.'); resolve(false); });
+  });
+}
+
+if (navLogin) navLogin.addEventListener('click', (e) => { e.preventDefault(); openRestore(); });
+
+if (restoreBtn) restoreBtn.onclick = () => {
+  const email = (restoreEmailInput.value || '').trim().toLowerCase();
+  verifyAndUnlock(email, restoreStatus, { onSuccess: () => setTimeout(closeRestore, 1800) });
+};
+if (restoreEmailInput) restoreEmailInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); if (restoreBtn) restoreBtn.click(); }
+});
 
 // ---------- Manage Subscription (Pro only) -> Creem customer portal ----------
 if (manageSubBtn) {

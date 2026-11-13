@@ -284,23 +284,25 @@
       <h2>Daily free limit reached</h2>
       <p class="modal-sub">Upgrade to Pro for up to 50 generations per day.</p>
       <button class="get-pro" id="limitUpgradeBtn">Upgrade to Pro</button>
-      <p class="limit-recover-title">Already Pro? Enter your payment email to unlock.</p>
-      <input type="email" id="limitEmail" class="email-input" placeholder="you@example.com" />
-      <button class="waitlist-submit" id="limitUnlockBtn">Unlock</button>
-      <p class="waitlist-status" id="limitUnlockStatus"></p>
+      <p class="limit-recover-title">Already Pro? Restore access with your checkout email.</p>
+      <button class="waitlist-submit" id="limitRestoreBtn">Restore Pro Access</button>
     </div>
   </div>
 
-  <!-- ===== Restore Pro Access (Login button): self-serve Pro recovery by email ===== -->
+  <!-- ===== Restore Pro Access (Login button): secure Email OTP self-serve recovery ===== -->
   <div class="modal" id="restoreModal" hidden>
     <div class="modal-backdrop" data-close-restore></div>
     <div class="modal-card">
       <button class="modal-x" data-close-restore aria-label="Close">✕</button>
       <h2>Restore Pro Access</h2>
-      <p class="modal-sub">Enter the email you used at checkout to restore your Pro access on this device.</p>
+      <p class="modal-sub">Enter the email you used at checkout. We'll send a 6-digit code to verify it's really you.</p>
       <input type="email" id="restoreEmail" class="email-input" placeholder="Enter the email you used at checkout" autocomplete="email" />
-      <button class="waitlist-submit" id="restoreBtn">Restore Access</button>
+      <button class="waitlist-submit" id="restoreSendBtn">Send Code</button>
       <p class="waitlist-status" id="restoreStatus"></p>
+      <div id="restoreOtpWrap" hidden>
+        <input type="text" id="restoreCode" class="email-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" />
+        <button class="waitlist-submit" id="restoreVerifyBtn">Verify &amp; Login</button>
+      </div>
     </div>
   </div>
 
@@ -349,15 +351,8 @@
         </div>
       </div>
       <p class="pricing-note" id="pricingNote" hidden></p>
-      <div class="pro-activate" id="proActivate" hidden>
-        <p class="pro-activate-title">Already subscribed?</p>
-        <p class="pro-activate-sub">Enter the email you used at checkout to unlock Pro on this device.</p>
-        <input type="email" id="proEmail" class="email-input" placeholder="you@example.com" />
-        <button class="waitlist-submit" id="proActivateBtn">Activate Pro</button>
-        <p class="waitlist-status" id="proActivateStatus"></p>
-      </div>
-      <p class="pricing-activate"><a href="#" id="activateProLink">I already paid — activate Pro</a></p>
-      <p class="pricing-secure">🔒 Secure checkout via Creem. No account creation required. Your Pro access will be instantly linked to the email you enter at checkout.</p>
+      <p class="pricing-activate"><a href="#" id="activateProLink">I already paid — restore Pro access</a></p>
+      <p class="pricing-secure">🔒 Secure checkout via Creem. No account creation required. Your Pro access is linked to the email you use at checkout — restore it anytime with a verification code.</p>
     </div>
   </div>
 

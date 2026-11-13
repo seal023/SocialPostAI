@@ -402,8 +402,6 @@ function refreshLimitUI() {
     genBtn.disabled = false;
     genBtn.textContent = 'Generate Content';
   }
-  const mgr = document.getElementById('manageSubBtn');
-  if (mgr) mgr.hidden = !isPro();
   renderUsageCounter(lastUsage);
 }
 
@@ -493,7 +491,6 @@ renderTurnstile();
 const result = document.getElementById('result');
 const resultBody = document.getElementById('resultBody');
 const generateBtn = document.getElementById('generateBtn');
-const manageSubBtn = document.getElementById('manageSubBtn');
 
 // A refresh wipes the streaming state. Surface the interruption notice once on the
 // next load so the user knows the generation stopped AND the free credit survived.
@@ -869,35 +866,6 @@ if (restoreCodeInput) restoreCodeInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); if (restoreVerifyBtn && !restoreVerifyBtn.disabled) restoreVerifyBtn.click(); }
 });
 if (navLogin) navLogin.addEventListener('click', (e) => { e.preventDefault(); openRestore(); });
-
-// ---------- Manage Subscription (Pro only) -> Creem customer portal ----------
-if (manageSubBtn) {
-  manageSubBtn.onclick = async () => {
-    const email = getProEmail();
-    if (!email) return;
-    const orig = manageSubBtn.textContent;
-    manageSubBtn.disabled = true;
-    manageSubBtn.textContent = 'Opening…';
-    try {
-      const res = await fetch(`${WORKER_URL}/api/creem-portal`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (d && d.url) {
-        window.open(d.url, '_blank');
-      } else {
-        alert(d && d.message ? d.message : 'Could not open the subscription manager. Please contact support.');
-      }
-    } catch (e) {
-      alert('Failed to open the subscription manager. Please contact support.');
-    } finally {
-      manageSubBtn.disabled = false;
-      manageSubBtn.textContent = orig;
-    }
-  };
-}
 
 // ---------- Limit reached modal (upgrade + Pro recovery) ----------
 const limitModal = document.getElementById('limitModal');

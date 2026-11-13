@@ -1,17 +1,28 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" translate="no">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#09090b" />
+  <meta name="google" content="notranslate" />
   <title>SocialPostAI — AI Social Media Post Generator for Platform-Perfect Copy</title>
   <meta name="description" content="SocialPostAI is an AI social media post generator that writes platform-perfect copy for Instagram, TikTok, X, LinkedIn and Facebook. Get 1 free generation per day in English or Chinese." />
   <meta name="keywords" content="AI social media post generator, platform-perfect copy, Instagram caption generator, TikTok script generator, LinkedIn post generator, social media copy AI, X post generator, Facebook post generator" />
   <meta name="robots" content="noindex, follow, max-image-preview:large" />
   <link rel="canonical" href="https://socialpostai.app/app.html" />
 
-  <!-- Cloudflare Turnstile SITE KEY. Leave empty during testing (widget hidden, Worker bypassed).
-       Tomorrow: paste your site key here AND re-enable the Worker gate together. -->
+  <!-- ============================================================
+       Cloudflare Turnstile SITE KEY (client-side, PUBLIC key).
+       PASTE YOUR REAL SITE KEY between the quotes below, e.g.
+         content="0x4ABCD1234efghIJKLmnopQRSTuvwxYZ"
+       The checkbox only renders when this is non-empty.
+       The Worker only ENFORCES verification when its env var
+       TURNSTILE_ENFORCE=1 is set. BOTH must agree:
+         • key filled + enforce off  -> widget shows, Worker lets you through (testing)
+         • key filled + enforce on   -> widget shows, Worker validates the token (LIVE)
+         • key empty  + enforce on   -> every generation 403s with no visible widget (BROKEN)
+       Get the key from Cloudflare → Turnstile → your widget → "Site Key".
+       ============================================================ -->
   <meta name="turnstile-site-key" content="" />
 
   <!-- Open Graph -->
@@ -262,7 +273,6 @@
       <a href="/contact.html">Contact</a>
     </nav>
     <p class="footer-email">Support: <a href="mailto:support@socialpostai.app">support@socialpostai.app</a></p>
-    <p class="footer-fine">To manage or cancel your subscription, please click the "Manage Subscription" button or email support@socialpostai.app.</p>
     <p class="footer-fine">© <span id="year"></span> SocialPostAI Pro. AI-generated content is for reference only. Please review manually.</p>
   </footer>
 
@@ -278,6 +288,19 @@
       <input type="email" id="limitEmail" class="email-input" placeholder="you@example.com" />
       <button class="waitlist-submit" id="limitUnlockBtn">Unlock</button>
       <p class="waitlist-status" id="limitUnlockStatus"></p>
+    </div>
+  </div>
+
+  <!-- ===== Restore Pro Access (Login button): self-serve Pro recovery by email ===== -->
+  <div class="modal" id="restoreModal" hidden>
+    <div class="modal-backdrop" data-close-restore></div>
+    <div class="modal-card">
+      <button class="modal-x" data-close-restore aria-label="Close">✕</button>
+      <h2>Restore Pro Access</h2>
+      <p class="modal-sub">Enter the email you used at checkout to restore your Pro access on this device.</p>
+      <input type="email" id="restoreEmail" class="email-input" placeholder="Enter the email you used at checkout" autocomplete="email" />
+      <button class="waitlist-submit" id="restoreBtn">Restore Access</button>
+      <p class="waitlist-status" id="restoreStatus"></p>
     </div>
   </div>
 

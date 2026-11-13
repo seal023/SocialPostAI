@@ -745,99 +745,130 @@ document.getElementById('navPricing').addEventListener('click', (e) => { e.preve
 document.getElementById('getMonthlyBtn').onclick = () => { openCreemCheckout(CREEM_LINKS.monthly); };
 document.getElementById('getAnnualBtn').onclick = () => { openCreemCheckout(CREEM_LINKS.annual); };
 
-// Pro activation inside the Pricing modal (email-based; verified server-side via Creem webhook into KV)
-const proActivate = document.getElementById('proActivate');
-const proEmailInput = document.getElementById('proEmail');
-const proActivateBtn = document.getElementById('proActivateBtn');
-const proActivateStatus = document.getElementById('proActivateStatus');
-document.getElementById('activateProLink').onclick = (e) => { e.preventDefault(); proActivate.hidden = false; proEmailInput.focus(); };
-proActivateBtn.onclick = async () => {
-  const email = proEmailInput.value.trim().toLowerCase();
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    proActivateStatus.className = 'waitlist-status err';
-    proActivateStatus.textContent = 'Please enter a valid email.';
-    return;
-  }
-  proActivateStatus.className = 'waitlist-status';
-  proActivateStatus.textContent = 'Verifying…';
-  try {
-    const res = await fetch(`${WORKER_URL}/api/verify-pro`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (data && data.pro) {
-      localStorage.setItem('spai_pro_email', email);
-      proActivateStatus.className = 'waitlist-status ok';
-      proActivateStatus.textContent = 'Pro activated on this device — generations now use your Pro quota.';
-      refreshLimitUI();
-      fetchUsage();
-      setTimeout(closePricing, 1600);
-    } else {
-      proActivateStatus.className = 'waitlist-status err';
-      proActivateStatus.textContent = 'No Pro plan found for this email. Double-check the address you used at checkout.';
-    }
-  } catch (e) {
-    proActivateStatus.className = 'waitlist-status err';
-    proActivateStatus.textContent = 'Verification failed (network). Please try again.';
-  }
-};
+// "I already paid" link inside Pricing opens the OTP-based Restore modal (secure self-recovery).
+document.getElementById('activateProLink').onclick = (e) => { e.preventDefault(); openRestore(); };
 
-// ---------- Login button -> Restore Pro Access modal (no real account system; Pro is email-based) ----------
-// Users who bought Pro on another device / cleared cache can self-recover by entering
-// the checkout email. The Worker verifies against the Creem-backed `pro:<email>` KV record.
+// ---------- Login button -> Restore Pro Access modal (secure Email OTP) ----------
+// Anyone can type an email, but Pro is only unlocked after the owner proves they can
+// read that inbox: /api/send-otp emails a 6-digit code, /api/verify-otp checks it and
+// (on success) confirms pro:<email> is valid before granting. No email-only shortcut.
 const navLogin = document.getElementById('navLogin');
 const restoreModal = document.getElementById('restoreModal');
 const restoreEmailInput = document.getElementById('restoreEmail');
-const restoreBtn = document.getElementById('restoreBtn');
+const restoreSendBtn = document.getElementById('restoreSendBtn');
 const restoreStatus = document.getElementById('restoreStatus');
+const restoreOtpWrap = document.getElementById('restoreOtpWrap');
+const restoreCodeInput = document.getElementById('restoreCode');
+const restoreVerifyBtn = document.getElementById('restoreVerifyBtn');
+const isEmail = (v) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v);
 
 function openRestore() {
   if (restoreStatus) { restoreStatus.className = 'waitlist-status'; restoreStatus.textContent = ''; }
+  if (restoreOtpWrap) restoreOtpWrap.hidden = true;
+  if (restoreSendBtn) { restoreSendBtn.disabled = false; restoreSendBtn.textContent = 'Send Code'; }
+  if (restoreVerifyBtn) restoreVerifyBtn.disabled = false;
   if (restoreModal) restoreModal.hidden = false;
   if (restoreEmailInput) restoreEmailInput.focus();
 }
 function closeRestore() { if (restoreModal) restoreModal.hidden = true; }
 if (restoreModal) restoreModal.querySelectorAll('[data-close-restore]').forEach((el) => (el.onclick = closeRestore));
 
-function verifyAndUnlock(email, statusEl, { onSuccess } = {}) {
-  return new Promise((resolve) => {
-    const setStatus = (cls, msg) => { if (statusEl) { statusEl.className = 'waitlist-status' + (cls ? ' ' + cls : ''); statusEl.textContent = msg; } };
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { setStatus('err', 'Please enter a valid email.'); return resolve(false); }
-    setStatus('', 'Verifying…');
-    fetch(`${WORKER_URL}/api/verify-pro`, {
+// Step 1: request the code. Throttled server-side to 1/min per email + per IP.
+if (restoreSendBtn) restoreSendBtn.onclick = async () => {
+  const email = (restoreEmailInput.value || '').trim().toLowerCase();
+  if (!isEmail(email)) {
+    restoreStatus.className = 'waitlist-status err';
+    restoreStatus.textContent = 'Please enter a valid email.';
+    return;
+  }
+  restoreStatus.className = 'waitlist-status';
+  restoreStatus.textContent = 'Sending code…';
+  restoreSendBtn.disabled = true;
+  try {
+    const res = await fetch(`${WORKER_URL}/api/send-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
-    })
-      .then((r) => r.json().catch(() => ({})))
-      .then((data) => {
-        if (data && data.pro) {
-          try { localStorage.setItem('spai_pro_email', email); } catch { /* storage blocked */ }
-          setStatus('ok', 'Pro access restored on this device — your generations now use the Pro quota.');
-          refreshLimitUI();
-          fetchUsage();
-          if (typeof onSuccess === 'function') onSuccess();
-          resolve(true);
-        } else {
-          setStatus('err', 'No active subscription found for this email.');
-          resolve(false);
-        }
-      })
-      .catch(() => { setStatus('err', 'Verification failed (network). Please try again.'); resolve(false); });
-  });
-}
+    });
+    const d = await res.json().catch(() => ({}));
+    if (d && d.ok) {
+      restoreStatus.className = 'waitlist-status ok';
+      restoreStatus.textContent = 'Code sent. Check your inbox (and spam folder).';
+      if (restoreOtpWrap) restoreOtpWrap.hidden = false;
+      if (restoreCodeInput) restoreCodeInput.focus();
+    } else if (d && d.error === 'rate_limited') {
+      restoreSendBtn.disabled = false;
+      restoreStatus.className = 'waitlist-status err';
+      restoreStatus.textContent = 'Too many requests. Please wait a minute and try again.';
+    } else if (d && d.error === 'resend_not_configured') {
+      restoreSendBtn.disabled = false;
+      restoreStatus.className = 'waitlist-status err';
+      restoreStatus.textContent = 'Email service is not configured yet. Please contact support.';
+    } else {
+      restoreSendBtn.disabled = false;
+      restoreStatus.className = 'waitlist-status err';
+      restoreStatus.textContent = (d && d.message) || 'Could not send the code. Please try again.';
+    }
+  } catch (e) {
+    restoreSendBtn.disabled = false;
+    restoreStatus.className = 'waitlist-status err';
+    restoreStatus.textContent = 'Network error. Please try again.';
+  }
+};
 
-if (navLogin) navLogin.addEventListener('click', (e) => { e.preventDefault(); openRestore(); });
-
-if (restoreBtn) restoreBtn.onclick = () => {
+// Step 2: verify the code, then unlock Pro locally if the email is entitled.
+if (restoreVerifyBtn) restoreVerifyBtn.onclick = async () => {
   const email = (restoreEmailInput.value || '').trim().toLowerCase();
-  verifyAndUnlock(email, restoreStatus, { onSuccess: () => setTimeout(closeRestore, 1800) });
+  const code = (restoreCodeInput.value || '').trim();
+  if (!isEmail(email)) {
+    restoreStatus.className = 'waitlist-status err';
+    restoreStatus.textContent = 'Please enter a valid email.';
+    return;
+  }
+  if (!/^\d{6}$/.test(code)) {
+    restoreStatus.className = 'waitlist-status err';
+    restoreStatus.textContent = 'Enter the 6-digit code we sent to your email.';
+    return;
+  }
+  restoreStatus.className = 'waitlist-status';
+  restoreStatus.textContent = 'Verifying…';
+  restoreVerifyBtn.disabled = true;
+  try {
+    const res = await fetch(`${WORKER_URL}/api/verify-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (d && d.ok && d.pro) {
+      try { localStorage.setItem('spai_pro_email', email); } catch { /* storage blocked */ }
+      restoreStatus.className = 'waitlist-status ok';
+      restoreStatus.textContent = 'Pro access restored on this device.';
+      refreshLimitUI();
+      fetchUsage();
+      setTimeout(closeRestore, 1800);
+    } else if (d && d.ok && d.pro === false) {
+      restoreVerifyBtn.disabled = false;
+      restoreStatus.className = 'waitlist-status err';
+      restoreStatus.textContent = 'This email does not have an active Pro subscription.';
+    } else {
+      restoreVerifyBtn.disabled = false;
+      restoreStatus.className = 'waitlist-status err';
+      restoreStatus.textContent = 'Invalid or expired code. Request a new one and try again.';
+    }
+  } catch (e) {
+    restoreVerifyBtn.disabled = false;
+    restoreStatus.className = 'waitlist-status err';
+    restoreStatus.textContent = 'Network error. Please try again.';
+  }
 };
 if (restoreEmailInput) restoreEmailInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); if (restoreBtn) restoreBtn.click(); }
+  if (e.key === 'Enter') { e.preventDefault(); if (restoreSendBtn && !restoreSendBtn.disabled) restoreSendBtn.click(); }
 });
+if (restoreCodeInput) restoreCodeInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); if (restoreVerifyBtn && !restoreVerifyBtn.disabled) restoreVerifyBtn.click(); }
+});
+if (navLogin) navLogin.addEventListener('click', (e) => { e.preventDefault(); openRestore(); });
 
 // ---------- Manage Subscription (Pro only) -> Creem customer portal ----------
 if (manageSubBtn) {
@@ -886,42 +917,9 @@ limitModal.querySelectorAll('[data-close-limit]').forEach((el) => (el.onclick = 
 document.getElementById('waitlistFromLimit').onclick = openLimitModal; // card's "Upgrade to Pro" link
 document.getElementById('limitUpgradeBtn').onclick = () => { openCreemCheckout(CREEM_LINKS.monthly); };
 
-// Pro recovery: verify the payment email server-side, then unlock Pro on this device.
-const limitEmailInput = document.getElementById('limitEmail');
-const limitUnlockBtn = document.getElementById('limitUnlockBtn');
-const limitUnlockStatus = document.getElementById('limitUnlockStatus');
-limitUnlockBtn.onclick = async () => {
-  const email = limitEmailInput.value.trim().toLowerCase();
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    limitUnlockStatus.className = 'waitlist-status err';
-    limitUnlockStatus.textContent = 'Please enter a valid email.';
-    return;
-  }
-  limitUnlockStatus.className = 'waitlist-status';
-  limitUnlockStatus.textContent = 'Verifying…';
-  try {
-    const res = await fetch(`${WORKER_URL}/api/verify-pro`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (data && data.pro) {
-      localStorage.setItem('spai_pro_email', email);
-      limitUnlockStatus.className = 'waitlist-status ok';
-      limitUnlockStatus.textContent = 'Pro unlocked! Your generations now use the Pro quota.';
-      refreshLimitUI();
-      fetchUsage();
-      setTimeout(closeLimitModal, 1600);
-    } else {
-      limitUnlockStatus.className = 'waitlist-status err';
-      limitUnlockStatus.textContent = 'No Pro plan found for this email. Double-check the address, or upgrade below.';
-    }
-  } catch (e) {
-    limitUnlockStatus.className = 'waitlist-status err';
-    limitUnlockStatus.textContent = 'Verification failed (network). Please try again.';
-  }
-};
+// Pro recovery (from the free-limit modal): route to the OTP-based Restore modal.
+const limitRestoreBtn = document.getElementById('limitRestoreBtn');
+if (limitRestoreBtn) limitRestoreBtn.onclick = openRestore;
 
 // ---------- Welcome dialog + silent Pro binding ----------
 // CREEM_RETURN_KEYS and PAYMENT_RETURN are defined at the top of this file so the

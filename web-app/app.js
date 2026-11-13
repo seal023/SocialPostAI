@@ -34,6 +34,8 @@ const TURNSTILE_SITE_KEY = String(
 ).trim();
 let cfToken = '';
 let turnstileWidgetId = null;
+let turnstileEnforced = false;      // server requires a Turnstile token (Worker TURNSTILE_ENFORCE=1)
+let turnstileMisconfigured = false; // server enforces but no client SITE KEY -> generation impossible
 
 // ---------- Device fingerprint (for rate limiting) ----------
 function getDeviceId() {
@@ -98,11 +100,26 @@ function getCheckoutId() {
 // - Key present  -> unhide #turnstileWrap, wait up to ~10s for the API, render ONCE.
 // A missing/broken widget must never dead-end the user in a captcha wall.
 function renderTurnstile() {
-  if (!TURNSTILE_SITE_KEY) return;
   const wrap = document.getElementById('turnstileWrap');
   const host = document.getElementById('turnstileWidget');
   const status = document.getElementById('turnstileStatus');
   if (!wrap || !host) return;
+
+  // No SITE KEY on the page. If the server does NOT enforce Turnstile this is the normal
+  // testing state (nothing shown, nothing blocked). But if the server DOES enforce it, a
+  // missing key means every generation would 403 with no visible widget — surface that
+  // loudly instead of dead-ending the user with a confusing 403.
+  if (!TURNSTILE_SITE_KEY) {
+    if (turnstileEnforced) {
+      turnstileMisconfigured = true;
+      wrap.hidden = false;
+      if (status) {
+        status.hidden = false;
+        status.textContent = 'Human verification is required by the server, but the Turnstile site key is not configured. Add your site key to app.html to enable generation.';
+      }
+    }
+    return;
+  }
   wrap.hidden = false;
 
   // Load the Cloudflare API only when a SITE KEY exists. During testing (empty key)
@@ -155,6 +172,26 @@ function renderTurnstile() {
 // With an empty SITE KEY (or a failed widget) this is always false.
 function turnstileBlocking() {
   return !!(TURNSTILE_SITE_KEY && turnstileWidgetId !== null && !cfToken);
+}
+
+// Reconcile server enforcement state with the client SITE KEY after /api/usage returns.
+// Surfaces a misconfig (server enforces, no key) so the user is never silently 403'd,
+// and clears the warning once a key is present. Then re-evaluates widget rendering.
+function syncTurnstileState() {
+  const wrap = document.getElementById('turnstileWrap');
+  const status = document.getElementById('turnstileStatus');
+  if (turnstileEnforced && !TURNSTILE_SITE_KEY) {
+    turnstileMisconfigured = true;
+    if (wrap) wrap.hidden = false;
+    if (status) {
+      status.hidden = false;
+      status.textContent = 'Human verification is required by the server, but the Turnstile site key is not configured. Add your site key to app.html to enable generation.';
+    }
+  } else {
+    turnstileMisconfigured = false;
+    if (status && !turnstileWidgetId) { status.hidden = true; status.textContent = ''; }
+  }
+  renderTurnstile(); // re-evaluate widget rendering now that enforcement is known
 }
 
 // ---------- Platform list ----------
@@ -418,6 +455,8 @@ async function fetchUsage() {
     const d = await res.json().catch(() => null);
     if (!d || !d.ok) return;
     lastUsage = { tier: d.tier === 'pro' ? 'pro' : 'free', limit: d.limit, used: d.used, left: d.left };
+    turnstileEnforced = !!d.turnstileEnforced;
+    syncTurnstileState();
     refreshLimitUI();
   } catch (e) {
     // Network/Worker down: keep the optimistic local value already on screen.
@@ -472,6 +511,12 @@ const manageSubBtn = document.getElementById('manageSubBtn');
 })();
 
 generateBtn.onclick = async () => {
+  if (turnstileMisconfigured) {
+    const status = document.getElementById('turnstileStatus');
+    if (status && status.hidden) status.hidden = false;
+    alert('Human verification is required by the server, but the Turnstile site key is missing in app.html. Please add it to enable generation.');
+    return;
+  }
   if (freeDepleted()) { openLimitModal(); return; }
   if (!topic.value.trim()) { alert('Please enter a topic first.'); return; }
   if (!selectedPlatform) { alert('Please select a platform.'); return; }

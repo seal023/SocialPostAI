@@ -200,10 +200,26 @@ function usedToday() {
 }
 function markUsed() {
   localStorage.setItem(todayKey(), String(usedToday() + 1));
+  // Keep the on-screen counter AND the Generate button in lock-step with the server
+  // truth: the instant a credit is spent, decrement the synced remaining count locally
+  // so the button and the counter can never show contradictory states (e.g. counter says
+  // "1 left" while the button is greyed). fetchUsage() re-syncs with the server afterwards.
+  if (lastUsage && lastUsage.tier === 'free' && lastUsage.left > 0) {
+    lastUsage = { ...lastUsage, used: lastUsage.used + 1, left: lastUsage.left - 1 };
+  }
 }
 function limitReached() {
   if (isPro()) return false; // Pro is enforced server-side (up to 50/day)
   return usedToday() >= 1; // free plan: 1 generation per day
+}
+// Authoritative "is the free quota gone?" decision. Prefers the server-synced counter
+// (lastUsage.left) so the button and the counter ALWAYS agree; falls back to the local
+// optimistic flag only before the first /api/usage response arrives. This is what fixes
+// the "counter says 1 left but button is greyed" state-machine conflict.
+function freeDepleted() {
+  if (isPro()) return false;
+  if (lastUsage && lastUsage.tier === 'free') return lastUsage.left <= 0;
+  return limitReached();
 }
 
 // ---------- Render: platform chips (single-select) ----------
@@ -338,7 +354,7 @@ function refreshLimitUI() {
     limitNote.hidden = true;
     genBtn.disabled = false;
     genBtn.textContent = 'Generate Content';
-  } else if (limitReached()) {
+  } else if (freeDepleted()) {
     planTag.textContent = 'Free · used today';
     limitNote.hidden = false;
     genBtn.disabled = true;
@@ -456,7 +472,7 @@ const manageSubBtn = document.getElementById('manageSubBtn');
 })();
 
 generateBtn.onclick = async () => {
-  if (limitReached()) { openLimitModal(); return; }
+  if (freeDepleted()) { openLimitModal(); return; }
   if (!topic.value.trim()) { alert('Please enter a topic first.'); return; }
   if (!selectedPlatform) { alert('Please select a platform.'); return; }
   if (turnstileBlocking()) { alert('Please complete the human verification first.'); return; }
@@ -498,12 +514,14 @@ generateBtn.onclick = async () => {
       } catch {}
       // A payer whose server-side Pro record is still syncing must NEVER be shown a
       // "free limit reached" prompt. Retry the silent checkout claim in the background.
+      // Shown as a NEUTRAL status line (no red, no second CTA): the result area is
+      // reserved for copy/status, never for a red inline upgrade nag.
       if (isPro() && code === 'free_quota_used') {
         if (PAYMENT_RETURN.checkoutId) claimCheckout(PAYMENT_RETURN.checkoutId, PAYMENT_RETURN.rawQuery);
         refreshLimitUI();
         result.hidden = false;
         resultBody.innerHTML =
-          '<p style="color:#f87171;font-weight:700;margin:0;">Your Pro access is still syncing. Please wait a few seconds and try again.</p>';
+          '<p style="color:#a1a1aa;font-weight:600;margin:0;">Your Pro access is still syncing. Please wait a few seconds and try again.</p>';
         return;
       }
       // Only a genuine daily free-quota exhaustion consumes the local free credit.
@@ -511,24 +529,28 @@ generateBtn.onclick = async () => {
       if (!isPro() && code === 'free_quota_used') markUsed();
       refreshLimitUI();
 
-      // Upgrade situations show the single dark box. Other 429s (too many requests,
-      // Pro cap reached, global capacity) are NOT upgrade situations: one short
-      // status line in the result area, no CTA and no dark box.
+      // Free daily quota exhausted -> the SINGLE dark box (#limitNote) owns the upgrade
+      // prompt. The result area is hard-cleared (hidden + emptied) so no red inline
+      // text or stray button can survive a refresh or a prior generation.
       if (code === 'free_quota_used' || code === '') {
         showLimitNotice(msg);
+        result.hidden = true;
+        resultBody.innerHTML = '';
       } else {
+        // Other 429s (too many requests, Pro cap, global capacity): one NEUTRAL
+        // status line in the result area, no red, no CTA, no dark box.
         result.hidden = false;
-        resultBody.innerHTML = `<p style="color:#f87171;font-weight:700;margin:0;">${escapeHtml(msg)}</p>`;
+        resultBody.innerHTML = `<p style="color:#a1a1aa;font-weight:600;margin:0;">${escapeHtml(msg)}</p>`;
       }
       return;
     }
 
-    // Captcha failed at the edge — prompt a fresh solve.
+    // Captcha failed at the edge — prompt a fresh solve. Neutral status, no red.
     if (res.status === 403) {
       let msg = 'Please complete the human verification.';
       try { const e = await res.json(); if (e && e.message) msg = e.message; } catch {}
       result.hidden = false;
-      resultBody.innerHTML = `<p style="color:#f87171;font-weight:700;margin:0;">${escapeHtml(msg)}</p>`;
+      resultBody.innerHTML = `<p style="color:#a1a1aa;font-weight:600;margin:0;">${escapeHtml(msg)}</p>`;
       if (window.turnstile && turnstileWidgetId !== null) { try { window.turnstile.reset(); } catch {} cfToken = ''; }
       return;
     }
@@ -555,7 +577,7 @@ generateBtn.onclick = async () => {
     result.hidden = false;
     resultBody.innerHTML = `<p style="color:#f87171;font-weight:700;margin:0;">${ENGINE_BUSY}</p>`;
   } finally {
-    if (!limitReached()) {
+    if (!freeDepleted()) {
       generateBtn.disabled = false;
       generateBtn.textContent = 'Generate Content';
     }
@@ -660,13 +682,23 @@ const CREEM_LINKS = {
   monthly: 'https://www.creem.io/payment/prod_4Thpo8gm2uZlxCVAfMtwi9',
   annual: 'https://www.creem.io/payment/prod_5roUxqOnOKvxOwkeGfFGcq',
 };
+
+// Open the Creem checkout in a NEW TAB so a payment failure (or a stuck Creem error
+// dialog) can simply be closed, leaving the user on our site instead of being trapped
+// on Creem's page. If the browser blocks the popup, fall back to a same-tab redirect.
+function openCreemCheckout(url) {
+  let w;
+  try { w = window.open(url, '_blank', 'noopener,noreferrer'); } catch { w = null; }
+  if (!w) window.location.href = url;
+}
+
 const pricingModal = document.getElementById('pricingModal');
 function openPricing() { pricingModal.hidden = false; }
 function closePricing() { pricingModal.hidden = true; }
 pricingModal.querySelectorAll('[data-close-pricing]').forEach((el) => (el.onclick = closePricing));
 document.getElementById('navPricing').addEventListener('click', (e) => { e.preventDefault(); openPricing(); });
-document.getElementById('getMonthlyBtn').onclick = () => { window.location.href = CREEM_LINKS.monthly; };
-document.getElementById('getAnnualBtn').onclick = () => { window.location.href = CREEM_LINKS.annual; };
+document.getElementById('getMonthlyBtn').onclick = () => { openCreemCheckout(CREEM_LINKS.monthly); };
+document.getElementById('getAnnualBtn').onclick = () => { openCreemCheckout(CREEM_LINKS.annual); };
 
 // Pro activation inside the Pricing modal (email-based; verified server-side via Creem webhook into KV)
 const proActivate = document.getElementById('proActivate');
@@ -756,7 +788,7 @@ function closeLimitModal() {
 }
 limitModal.querySelectorAll('[data-close-limit]').forEach((el) => (el.onclick = closeLimitModal));
 document.getElementById('waitlistFromLimit').onclick = openLimitModal; // card's "Upgrade to Pro" link
-document.getElementById('limitUpgradeBtn').onclick = () => { window.location.href = CREEM_LINKS.monthly; };
+document.getElementById('limitUpgradeBtn').onclick = () => { openCreemCheckout(CREEM_LINKS.monthly); };
 
 // Pro recovery: verify the payment email server-side, then unlock Pro on this device.
 const limitEmailInput = document.getElementById('limitEmail');
@@ -866,7 +898,7 @@ if (welcomeStartBtn) welcomeStartBtn.onclick = () => {
   if (t && t.focus) t.focus({ preventScroll: true });
 };
 const welcomeAnnualLink = document.getElementById('welcomeAnnualLink');
-if (welcomeAnnualLink) welcomeAnnualLink.onclick = (e) => { e.preventDefault(); window.location.href = CREEM_LINKS.annual; };
+if (welcomeAnnualLink) welcomeAnnualLink.onclick = (e) => { e.preventDefault(); openCreemCheckout(CREEM_LINKS.annual); };
 
 // Landing "Pricing" link arrives as /app.html#pricing — open the pricing modal here.
 // A payment-success return always wins: never show Pricing on top of the welcome dialog.
